@@ -1,0 +1,182 @@
+# UR10e + Robotiq 2F-85 defaults. Rig values (IP, camera serials) belong in
+# configs/machines/<host>.yaml (see machines/example.yaml), passed with
+# --machine <host>.
+# Launch: python -m spark_real.server --robot ur10e --machine <host>
+
+robot:
+  ip: null                 # set in the machine overlay or with --ip
+  frequency: 500           # RTDE rate (Hz)
+  # Must match UR10eDriver.HOME_CONFIG.
+  home_config: [3.2070, -1.8788, -1.7903, 5.2496, 1.5762, 0.0916]
+  max_joint_velocity: 1.05 # rad/s
+  max_linear_velocity: 0.25 # m/s
+
+gripper:
+  type: "robotiq_2f85"
+  speed: 255
+  force: 100               # Robotiq norm 0-100
+  # URScript gripper program (exported from the Robotiq URCap; not shipped).
+  # Unset: $SPARK_GRIPPER_SCRIPT, else robots/ur10e/grippy.script if present.
+  script: null
+
+# Workspace bounds (m, base frame); z=0 is about the table surface.
+workspace:
+  x_min: -0.9
+  x_max: 0.9
+  y_min: -0.9
+  y_max: 0.9
+  z_min: -0.020            # slightly below the table for thin flat objects
+  z_max: 1.2
+  eta_kinematic: 5.0
+
+table_z_floor: -0.005
+
+# ScoreExecutor + SafeRobot box (base frame), distinct from workspace: above.
+control:
+  # Top-down TCP rotvec, the half-turn nearest home (keeps wrist 3 near home).
+  grasp_orientation: [2.3038, 2.0802, -0.0048]
+  # TCP rotation at HOME_CONFIG; the wrist-calibration sweep is built on it.
+  home_tcp_rotvec: [-2.2836, -2.1399, 0.0231]
+  workspace_min: [-1.1, -0.5, -0.27]
+  workspace_max: [-0.5, 0.7, 0.50]
+  max_reach: 1.15
+  # Fallback table floor; <calibrations>/table_plane.json overrides it.
+  table_z_floor: -0.276
+  table_safety_margin_m: 0.003   # floor sits this far above the measured surface
+  wrist_refine: false            # enable after the wrist hand-eye calibration
+
+# Grasp tuning (control/executor_core._apply_family_tuning).
+grasp:
+  depth_m: 0.022              # descend below the perceived top before clamping
+  force_empty_n: 2.0          # peak |dF| below this = closed on air
+  lift_check_m: 0.02          # confirming lift after clamp
+  lift_delta_min_n: 0.5       # extra pull the confirming lift must add
+  yaw_aspect_ratio_gate: 1.6  # oriented grasp only above this aspect ratio
+  yaw_min_conf: 0.45          # no OBB yaw below this detection confidence
+  yaw_min_obb_conf: 0.40      # no yaw below this OBB-axis confidence
+  max_yaw_offset_deg: 100     # wrist-3 cable limit for the oriented grasp
+
+# Task-success verification (control/success_verifier.py).
+verification:
+  enabled: true
+  min_conf: 0.35              # confidence floor for a camera to vote
+  require_two_views: false
+  inside_xy_margin_m: -0.02   # negative shrinks the container footprint
+  inside_z_tol_m: 0.06        # doubled on monocular depth
+  fallback_2d_containment: 1.01  # > 1.0 disables the image-space fallback
+  on_missing: unverified      # never "pass"
+  retry_on_fail: true         # replay a verified failure (moves the arm)
+  retry_max_attempts: 1       # never above 3
+  scope:                      # control/verify_scope.py
+    enabled: true
+    telemetry_short_circuit: true
+    reuse_capture_s: 0.0      # keep 0 on a live arm
+    anchor_references: false
+    condition_anchor_references: true
+    fusion: false
+    cameras: auto
+  release_verdict: false      # per-release verdict + rebind (SPARK_RELEASE_VERDICT)
+  attribution: false          # recovery attribution (SPARK_ATTRIBUTION)
+
+# Per-primitive traces under <output>/<ts>/trace/.
+trace:
+  enabled: true
+  save_images: false
+
+place:
+  release_giveback: false     # use the measured grasp depth at release
+
+stack:
+  clearance_m: 0.12
+  max_descent_m: 0.15
+  contact_force_n: 5.0        # force delta that counts as contact
+  hard_stop_delta_n: 25.0     # force delta emergency stop
+  step_m: 0.004
+  approach_gap_m: 0.02
+  descent_vel_frac: 0.10
+
+# Per-primitive hang watchdogs (s), control/primitive_timeouts.py.
+timeouts:
+  move_to_keypoint: 30.0
+  move_relative: 10.0
+  grasp: 25.0
+  release: 20.0
+  stack: 60.0
+  verify_placed: 25.0
+  verify_grasp: 5.0
+  insert: 10.0
+  push_object: 8.0
+  open_drawer: 10.0
+  wipe: 10.0
+  constrained_scrub: 10.0
+  default: 8.0
+  place_in_slot: 60.0
+  search_keypoint: 60.0
+  retract_retry: 60.0
+  # Task skills (tool_use.py, cloth.py); hang catches, not tuned on the UR10e.
+  grasp_se3: 60.0
+  sponge_wash: 150.0
+  pour: 60.0
+  sweep: 120.0
+  sweep_to_container: 120.0
+  cloth_fold_single: 90.0
+  cloth_fold: 240.0
+
+# Camera roster (perception/camera_registry.py). Serials go in the machine overlay.
+cameras:
+  - role: "birdview"
+    type: "kinect"
+    serial: null
+    sync: "master"
+  - role: "sideview"
+    type: "kinect"
+    serial: null
+    sync: "subordinate"
+  - role: "wrist"
+    type: "realsense"
+    serial: null
+    width: 640
+    height: 480
+    enabled: true
+
+# Kinect profile. Raise only with one USB host controller per Kinect.
+kinect_depth_mode: WFOV_2X2BINNED
+kinect_resolution: 720P
+kinect_fps: 15
+kinect_use_hw_sync: false
+kinect_master_serial: ""     # names the sideview Kinect; set in the machine overlay
+
+# Behavior-tree cache (spark_real/bt_library.py).
+bt:
+  library_dir: null          # null => <output_dir>/../bt_library
+  seed_dir: null             # null => the packaged configs/bt_seeds
+  seed_on_start: false
+  plan_mode: "auto"          # auto | cache_only | llm
+  min_similarity: 0.75
+  auto_promote_after: 3
+
+# Frozen per-task SAM3 prompt contracts. null => configs/tasks/*.yaml.
+task_prompts_dir: null
+
+# Detection conditioning (pipeline_perception.detection_gate).
+perception:
+  reprompt_min_conf: 0.40
+  reprompt_max_attempts: 2
+  rebind:
+    enabled: true
+    log_drift_cm: 2.0
+  sticky:
+    enabled: false
+    gate_m: 0.12
+    ambiguity_sep_m: 0.03
+    dedup_radius_m: 0.02
+  fusion:
+    enabled: true
+    write_confidence: false
+    proposer:                # second-opinion box detector
+      backend: rfdetr        # null | torchvision | rfdetr
+      enabled: true
+      device: cpu
+      threshold: 0.35
+      # Labels the proposer may vote on; others abstain.
+      labels: [fork, knife, spoon, bowl, cup, bottle, wine glass, scissors, dish, mug, blade]

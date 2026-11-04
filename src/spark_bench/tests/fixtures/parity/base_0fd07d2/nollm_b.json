@@ -1,0 +1,90 @@
+{
+ "trials": {
+  "pick_up_the_tomato_sauce_and_place_it_in_the_basket": [
+   {
+    "success": true,
+    "sim_steps": 527,
+    "error": null
+   },
+   {
+    "success": true,
+    "sim_steps": 465,
+    "error": null
+   },
+   {
+    "success": true,
+    "sim_steps": 529,
+    "error": null
+   }
+  ],
+  "pick_up_the_butter_and_place_it_in_the_basket": [
+   {
+    "success": false,
+    "sim_steps": 524,
+    "error": null
+   },
+   {
+    "success": false,
+    "sim_steps": 532,
+    "error": null
+   },
+   {
+    "success": false,
+    "sim_steps": 521,
+    "error": null
+   }
+  ],
+  "pick_up_the_milk_and_place_it_in_the_basket": [
+   {
+    "success": true,
+    "sim_steps": 452,
+    "error": null
+   },
+   {
+    "success": true,
+    "sim_steps": 449,
+    "error": null
+   },
+   {
+    "success": true,
+    "sim_steps": 453,
+    "error": null
+   }
+  ],
+  "pick_up_the_chocolate_pudding_and_place_it_in_the_basket": [
+   {
+    "success": false,
+    "sim_steps": 555,
+    "error": null
+   },
+   {
+    "success": false,
+    "sim_steps": 520,
+    "error": null
+   },
+   {
+    "success": false,
+    "sim_steps": 548,
+    "error": null
+   }
+  ],
+  "pick_up_the_orange_juice_and_place_it_in_the_basket": [
+   {
+    "success": true,
+    "sim_steps": 428,
+    "error": null
+   },
+   {
+    "success": true,
+    "sim_steps": 423,
+    "error": null
+   },
+   {
+    "success": true,
+    "sim_steps": 422,
+    "error": null
+   }
+  ]
+ },
+ "requests": []
+}

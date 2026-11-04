@@ -1,0 +1,321 @@
+{
+ "trials": {
+  "pick_up_the_alphabet_soup_and_place_it_in_the_basket": [
+   {
+    "success": false,
+    "sim_steps": 570,
+    "error": null
+   }
+  ],
+  "pick_up_the_cream_cheese_and_place_it_in_the_basket": [
+   {
+    "success": true,
+    "sim_steps": 1050,
+    "error": null
+   }
+  ],
+  "pick_up_the_salad_dressing_and_place_it_in_the_basket": [
+   {
+    "success": false,
+    "sim_steps": 1654,
+    "error": null
+   }
+  ],
+  "pick_up_the_bbq_sauce_and_place_it_in_the_basket": [
+   {
+    "success": false,
+    "sim_steps": 516,
+    "error": null
+   }
+  ],
+  "pick_up_the_ketchup_and_place_it_in_the_basket": [
+   {
+    "success": false,
+    "sim_steps": 554,
+    "error": null
+   }
+  ]
+ },
+ "requests": [
+  {
+   "body_sha256": "41adfaa2cb15ae6e70d9376ec8f5197fa1153d1dfa508b7297375fc30e1e1a90",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "4e1bc7aa9bfca47d29e533a95c6c27cc926088cd2984e9fec062426f4ea2492e",
+     "len": 594,
+     "head": "You are helping an open-vocabulary object detector. For each concept below (one "
+    },
+    {
+     "text_sha256": "534641c7aaf4059b4e55c988cf2879c1fe4cac6db0bb17664697ee331862d637",
+     "len": 33,
+     "head": "Output JSON only, no code fences."
+    }
+   ]
+  },
+  {
+   "body_sha256": "aff750e9103e8752300354a71104e07ad31982d9139bb6d91d418f269fd28bf0",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "f1e45d2d300d8cd7b2ab93c9ed22d1c3178e5a4c753f576d1e43ce65534d9945",
+     "len": 224,
+     "head": "The image is a grid of numbered close-up crops of objects on a table. Which numb"
+    },
+    {
+     "image_sha256": "7d30828a7a2ec2d88ad1c05c604488ea09a7f352de54714dddf0afc795c06eef"
+    }
+   ]
+  },
+  {
+   "body_sha256": "d8d94c0ae84c3c86325ae3c8201cbedb25985404c002f9ad8540fdc40ae7fba8",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "5b796158160dbf50341e221bb948540da6ebead7a64cff950392cb79aa1892a4",
+     "len": 63047,
+     "head": "You are SPARK, a robotic task planner. Given an image with labeled keypoints\nand"
+    },
+    {
+     "image_sha256": "d0499ba1737c1ced29f136d370aebd5d7a16fcd08871a08c771d0fba36152d92"
+    }
+   ]
+  },
+  {
+   "body_sha256": "bedc6de04dfdad39ddbd50c798c57b4d74ae24c0b6dce8a2da7d9c3ebc9ee92a",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "93fdc176cf815dd4e324df2fd017e01cbd3d809b23fa5c1105f5e8bca8be6490",
+     "len": 593,
+     "head": "You are helping an open-vocabulary object detector. For each concept below (one "
+    },
+    {
+     "text_sha256": "534641c7aaf4059b4e55c988cf2879c1fe4cac6db0bb17664697ee331862d637",
+     "len": 33,
+     "head": "Output JSON only, no code fences."
+    }
+   ]
+  },
+  {
+   "body_sha256": "bcd3a07b1deec9ae73c0a7afcdfa738673ca9eb53f04dae7d207360eccc36b3a",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "7ce8f8f72446dc32fc954f6f4e6f7aa0ecd43e45bc99dca6a974df306d082944",
+     "len": 222,
+     "head": "The image is a grid of numbered close-up crops of objects on a table. Which numb"
+    },
+    {
+     "image_sha256": "d2d30eea0c73fadabe808bd53246bca850558dbad618c14e5c618544dd3bfbc3"
+    }
+   ]
+  },
+  {
+   "body_sha256": "3be1a978c2f8b981fefd19c0bc33f506927e12b445f86d5cc2c13177cbf70b31",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "544d29e1dfa012228a7da6b07802d9c6826f6aa84b22ac4b62c9746366f53d9f",
+     "len": 62915,
+     "head": "You are SPARK, a robotic task planner. Given an image with labeled keypoints\nand"
+    },
+    {
+     "image_sha256": "e87603b47ce7d4477772e282b6ef9d3a8224cead6fdad60f0fc540d37ac3fd7d"
+    }
+   ]
+  },
+  {
+   "body_sha256": "7d17c6c16febf20944f1c22f1e92d3e597e281a0fbfed6338cf414877b518f5b",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "296f3ed79a00a708aac777035968826e961d55812154bfc52eef44430387cb97",
+     "len": 62962,
+     "head": "You are SPARK, a robotic task planner. Given an image with labeled keypoints\nand"
+    },
+    {
+     "image_sha256": "ea4cb0d33b577866733712d980a04a429eb3cb4a7c9e5e4ecc2da48a043dfe15"
+    }
+   ]
+  },
+  {
+   "body_sha256": "b15ba66b3cd4fae25698d47212f820f032ad9fafb712f56c5d5f557367c5e63a",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "8e72c3bff7fc5a4331fc53ce1e698544c042433d687df2490b37761b76a99abf",
+     "len": 598,
+     "head": "You are helping an open-vocabulary object detector. For each concept below (one "
+    },
+    {
+     "text_sha256": "534641c7aaf4059b4e55c988cf2879c1fe4cac6db0bb17664697ee331862d637",
+     "len": 33,
+     "head": "Output JSON only, no code fences."
+    }
+   ]
+  },
+  {
+   "body_sha256": "cbee9a5bcc27406fbbed5580495a7ffc55620f1e9c1d9084c6bef5e3c5ba767f",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "c257be66d6f9eece31916d4a4888bfc60e6d00ab580a5d35604c3d4940e0c487",
+     "len": 226,
+     "head": "The image is a grid of numbered close-up crops of objects on a table. Which numb"
+    },
+    {
+     "image_sha256": "cb58d7a0f2d9609b6b9a3a1fb23bb37a04050102c64bb6076a3dac388cd72fc5"
+    }
+   ]
+  },
+  {
+   "body_sha256": "93802ba228e7b545df73f629c39dcd803302d5dfdde612e5d8e898f470e9cee4",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "fbd9705a6cfabfb4394f490778609743c21377a8908faccf75166cfd44132db4",
+     "len": 62925,
+     "head": "You are SPARK, a robotic task planner. Given an image with labeled keypoints\nand"
+    },
+    {
+     "image_sha256": "666a5a5edf0bb4aa9463eb8e1dcab24bd6e45bfb9dcd430f99a26c942125ddb0"
+    }
+   ]
+  },
+  {
+   "body_sha256": "1aad69d1feb77c1da7e34e54e2fd49e9c147226f67f869e01bf09fa7275f8044",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "9a6dc4ef0f6a66e0e2ccda5f444f7478a1f9526f04ce57c9faac24c84d5da796",
+     "len": 62925,
+     "head": "You are SPARK, a robotic task planner. Given an image with labeled keypoints\nand"
+    },
+    {
+     "image_sha256": "b9f3ef6e997947c5ac4ae1ed603b6a6eb9d9911d04dcf4e0ca58cbbb2558f358"
+    }
+   ]
+  },
+  {
+   "body_sha256": "494578558b3db0a456fc665ef01b87857e9a6099ca5bef21404e75fa817a1bac",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "81b16c9936fbd03dad2fe53659d3fa0e2c601166607aa32cb7823a5ce950d38c",
+     "len": 62924,
+     "head": "You are SPARK, a robotic task planner. Given an image with labeled keypoints\nand"
+    },
+    {
+     "image_sha256": "a5c9edbeb015b1b0af5031dbeb861b801e783ea554ac1a1704641fc2915f3c4f"
+    }
+   ]
+  },
+  {
+   "body_sha256": "5277b82ae1e9fd47d2a46048d93614499042dec66c71a086f472ddf309337fd7",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "77317459b3738c2bc48e88eeb75e95f8f12df095b7047965e2161dbc0330637c",
+     "len": 583,
+     "head": "You are helping an open-vocabulary object detector. For each concept below (one "
+    },
+    {
+     "text_sha256": "534641c7aaf4059b4e55c988cf2879c1fe4cac6db0bb17664697ee331862d637",
+     "len": 33,
+     "head": "Output JSON only, no code fences."
+    }
+   ]
+  },
+  {
+   "body_sha256": "bc1a1a35a1d759067c3e374729a2297c6571c2edea4b0e5501aae0032510a3b8",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "5b8188c4e9729e16842fc46565c6432564ac68c20bcb4e95dcd53e6c3576f32c",
+     "len": 216,
+     "head": "The image is a grid of numbered close-up crops of objects on a table. Which numb"
+    },
+    {
+     "image_sha256": "12e694031c1a1e05d7a1ad66abc36851dc0ceb45e8dff6734556cf1d74718053"
+    }
+   ]
+  },
+  {
+   "body_sha256": "49e11734362fa4917b2dea3ac03be4eb39befe21f1ee1bbbf901fea0ea8f64dc",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "c90d8e559dd50b9f7f9e99d3882489de4dbd090718be665b9a8c63d44e8adf51",
+     "len": 63052,
+     "head": "You are SPARK, a robotic task planner. Given an image with labeled keypoints\nand"
+    },
+    {
+     "image_sha256": "121236ad828c0326ff45dd199c466568de6de6605746a14c7b59abb2eef4f3ee"
+    }
+   ]
+  },
+  {
+   "body_sha256": "8114cf0f600f1179928e9314938b4c1b2dc6f692cec1aba9fb6a0b98f4f57237",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "7039bbe75d04536793372b356c46eb35f8bab283893aa3f6e066e87ce4c19eba",
+     "len": 585,
+     "head": "You are helping an open-vocabulary object detector. For each concept below (one "
+    },
+    {
+     "text_sha256": "534641c7aaf4059b4e55c988cf2879c1fe4cac6db0bb17664697ee331862d637",
+     "len": 33,
+     "head": "Output JSON only, no code fences."
+    }
+   ]
+  },
+  {
+   "body_sha256": "d1bd06734f8711b66f3d481d3fa80ea6e5462516b6ebd28fd3f88baaae13abfe",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "3a61a9ee6e4e2abaf9de098199a8e5c96ab15ddf6db9dd9670292cfab521b9ef",
+     "len": 212,
+     "head": "The image is a grid of numbered close-up crops of objects on a table. Which numb"
+    },
+    {
+     "image_sha256": "4d66d6e56dfd86f21741d2a6a0cf3b8c541888ad3a54717ba3f376b907dee532"
+    }
+   ]
+  },
+  {
+   "body_sha256": "8e6d14fff5f07b8d254d7e8ad8d609fe54fa1fc6b817831bec08abd869340ae6",
+   "model": "fake",
+   "temperature": 0.0,
+   "parts": [
+    {
+     "text_sha256": "cfd25722a1d0b933803d904d47d48c8966cf201c4b24c10b60537b07b48c53db",
+     "len": 63054,
+     "head": "You are SPARK, a robotic task planner. Given an image with labeled keypoints\nand"
+    },
+    {
+     "image_sha256": "2cbbb3f5fb67b808c5be71fc5f7c3e4eabbc260e943a3ad92b057c4602146dda"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPARK</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<div id="app">
+  <!-- Top -->
+  <header class="top">
+    <div class="brand">
+      <b>SPARK</b>
+      <span class="sep"></span>
+    </div>
+    <div class="chips">
+      <span class="chips-label">Systems:</span>
+      <div class="chip"><span class="dot" id="d-kinect"></span>Ex. Cam 1</div>
+      <div class="chip"><span class="dot" id="d-kinect2"></span>Ex. Cam 2</div>
+      <div class="chip"><span class="dot" id="d-rs"></span>Wrist Cam</div>
+      <div class="chip"><span class="dot" id="d-robot"></span><span id="d-robot-label">UR10e</span></div>
+      <div class="chip"><span class="dot" id="d-sam3"></span>SAM3</div>
+      <div class="chip activity-pill idle" id="activity-pill" title="System activity"><span class="activity-dot"></span><span id="activity-text">Idle</span></div>
+      <button class="btn btn-s btn-p" id="btn-init" onclick="doInit()">Init</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- LEFT -->
+    <div class="viewport-wrap">
+      <div class="cam-toolbar">
+        <div class="left">
+          <button class="btn btn-s" onclick="doCapture()">
+            <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            Hi-Res
+          </button>
+          <button class="btn btn-s" id="btn-depth" onclick="toggleDepth()" title="Toggle depth view (turbo colormap)">Depth</button>
+          <button class="btn btn-s" id="btn-ir" onclick="toggleIR()" title="Toggle active-IR view (Kinect tiles only; works in the dark)">IR</button>
+          <button class="btn btn-s btn-record" id="btn-record" onclick="toggleRecord()" title="Record the current viewer feed to a .webm file"><span class="rec-dot"></span>Record</button>
+          <button class="btn btn-s" id="btn-feed" onclick="toggleFeed()" title="Pause/resume the live view. Paused = server encodes no frames for this tab (frees CPU during task runs); prompts and teleop keep working.">Feed: on</button>
+          <button class="btn btn-s" onclick="showLibrary()" title="Show saved BTs + promote toggle">Library</button>
+          <select id="cam-select" onchange="switchStreamCam(this.value)" style="font:500 10px var(--mono);background:var(--bg-2);color:var(--tx);border:0;border-radius:var(--r);padding:3px 7px;cursor:pointer">
+            <option value="all">All Cams</option>
+            <option value="sideview">Sideview</option>
+            <option value="birdview">Birdview</option>
+            <option value="wrist">Wrist</option>
+          </select>
+        </div>
+        <div class="right">
+          <span class="mode-label">Prompt:</span>
+          <button class="mode-btn active" data-mode="text" onclick="setMode('text')">Text</button>
+          <button class="mode-btn" data-mode="click" onclick="setMode('click')">Click</button>
+          <button class="mode-btn" data-mode="box" onclick="setMode('box')">Box</button>
+        </div>
+      </div>
+
+      <div class="viewport" id="viewport">
+        <div class="empty" id="cam-empty">
+          <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span>Initialize pipeline to begin</span>
+        </div>
+        <img id="cam-img" style="display:none" alt="" draggable="false"
+             onclick="if(_showingDetection)resumeLive()" title="Click to resume the live feed">
+        <canvas id="overlay-canvas" style="display:none"></canvas>
+        <span class="cam-tag" id="cam-tag" style="display:none">AGENTVIEW</span>
+        <span class="cam-ts" id="cam-ts" style="display:none"></span>
+        <span class="click-hint" id="click-hint" style="display:none"></span>
+      </div>
+
+      <div class="det-strip" id="det-strip" style="display:none">
+        <div class="det-strip-head">
+          <h4>Detections</h4>
+          <span class="det-count" id="det-count">0</span>
+        </div>
+        <div class="det-items" id="det-items"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="panels">
+      <div class="tabs">
+        <button class="tab on" data-t="task" onclick="openTab('task')">Task</button>
+        <button class="tab" data-t="robot" onclick="openTab('robot')">Robot</button>
+        <button class="tab" data-t="log" onclick="openTab('log')">Log</button>
+        <button class="tab" data-t="hist" onclick="openTab('hist')">History</button>
+      </div>
+
+      <!-- TASK -->
+      <div class="pane on" id="p-task">
+        <div class="steps" id="steps">
+          <div class="step" id="s-cap">1 Capture</div>
+          <div class="step" id="s-det">2 Detect</div>
+          <div class="step" id="s-plan">3 Plan</div>
+          <div class="step" id="s-exec">4 Execute</div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-h">Instruction</div>
+          <textarea id="in-instr" placeholder="pick up the red block and place it on the plate" rows="2"></textarea>
+        </div>
+
+        <div class="sec" id="sec-prompts">
+          <div class="sec-h">Text Prompts</div>
+          <div class="irow">
+            <input type="text" id="in-prompt" placeholder="Object name..." onkeydown="if(event.key==='Enter')addTag()">
+            <button class="btn btn-s" onclick="addTag()">+</button>
+            <button class="btn btn-s" onclick="autoPrompts()" title="Extract from instruction">Auto</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font:400 11px var(--mono);color:var(--tx-3);margin-top:4px;cursor:pointer" title="Return EVERY matching mask per prompt (block 1, block 2, ...). Required for stacking / multi-object tasks. Off = top-1 per label.">
+            <input type="checkbox" id="multi-inst"> all instances (stacking / multi-object)
+          </label>
+          <div class="tags" id="tag-list"></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-h">Actions</div>
+          <div class="brow" style="gap:12px;flex-wrap:wrap;margin-bottom:6px">
+            <label class="opt" title="Low-light test: feed each Kinect's IR image to SAM3 instead of RGB. Wrist (if connected) stays on its colour stream."><input type="checkbox" id="opt-detect-ir"> IR detection</label>
+            <!-- RF-DETR second opinion. Applies to the NEXT detect: the server
+                 drops its cached fusion gate on every change, no restart. -->
+            <label class="opt" title="Second-opinion detector (RF-DETR) over SAM3's masks.
+auto:   consulted only for the labels it is good at (cutlery, bowls, cups...)
+always: consulted for every label it knows -- penalises correct masks it misses
+off:    never consulted. The mask-quality gate stays ON either way.">
+              RF-DETR
+              <select id="opt-proposer-mode" onchange="setProposerMode(this.value)"
+                      style="background:#1a1a1a;color:#ddd;border:1px solid #444;border-radius:3px;font-size:12px;padding:1px 4px">
+                <option value="auto">auto</option>
+                <option value="always">always</option>
+                <option value="off">off</option>
+              </select>
+            </label>
+            <span id="proposer-status" class="opt" style="color:#666;font-family:var(--mono);font-size:11px;cursor:default"></span>
+          </div>
+          <div class="brow">
+            <button class="btn btn-f" onclick="doDetect()"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Detect Objects</button>
+            <button class="btn btn-f" onclick="doPlan()"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg> Generate Plan</button>
+            <button class="btn btn-f btn-p" onclick="doExec(false)"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21"/></svg> Execute Pipeline</button>
+            <button class="btn btn-f btn-w" onclick="doExec(true)">Dry Run</button>
+            <!-- Runs the instruction against whatever is in the pending set
+                 right now -- your clicks, your boxes -- WITHOUT re-running
+                 SAM3. Execute Pipeline always re-detects and overwrites them. -->
+            <button class="btn btn-f" onclick="doExecKeep(false)" title="Plan and execute on the detections already on screen. Does not re-detect, so click/box annotations survive.">Execute (keep detections)</button>
+            <button class="btn btn-f btn-d" onclick="doStop()" style="background:var(--red-15);border-color:var(--red);color:var(--red)">STOP</button>
+          </div>
+        </div>
+
+        <div class="sec" id="sec-plan" style="display:none">
+          <div class="sec-h">Generated Plan</div>
+          <div class="plan-box" id="plan-out"></div>
+        </div>
+      </div>
+
+      <!-- ROBOT -->
+      <div class="pane" id="p-robot">
+        <div class="sec">
+          <div class="sec-h">Connection</div>
+          <div class="irow">
+            <!-- value seeded on page load from /api/status (robot_ip) so the
+                 input reflects whichever robot family the server was started
+                 against; falls back to placeholder so the user must type if
+                 neither the YAML nor the CLI supplied one. -->
+            <input type="text" id="in-ip" value="" placeholder="set by --robot/--ip"
+                   oninput="this.dataset.userTouched='1'">
+            <button class="btn btn-s btn-p" id="btn-conn" onclick="doConnect()">Connect</button>
+          </div>
+          <div class="conn-progress" id="conn-prog">
+            <div class="conn-bar"><div class="conn-fill" id="conn-fill"></div></div>
+            <div class="conn-msg" id="conn-msg">Connecting...</div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-h">TCP Position</div>
+          <div style="font:400 12px var(--mono);color:var(--tx-2);line-height:1.9">
+            <div>X: <span id="tcp-x" style="color:var(--tx-1)">---</span> m</div>
+            <div>Y: <span id="tcp-y" style="color:var(--tx-1)">---</span> m</div>
+            <div>Z: <span id="tcp-z" style="color:var(--tx-1)">---</span> m</div>
+            <div>Grip: <span id="tcp-g" style="color:var(--tx-1)">---</span></div>
+            <div style="border-top:1px dashed var(--bd);margin-top:6px;padding-top:6px;font-size:11px">
+              <div>TCP-X yaw: <span id="tcp-rx" style="color:var(--cyan)">---</span></div>
+              <div>TCP-Y yaw: <span id="tcp-ry" style="color:var(--cyan)">---</span> <small style="color:var(--tx-3)">(closing axis)</small></div>
+              <div>Tilt-from-vertical: <span id="tcp-tilt" style="color:var(--tx-1)">---</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec only-singlearm">
+          <div class="sec-h">Teleop <span style="color:var(--cyan);font-weight:400">(keyboard + gamepad)</span></div>
+          <div style="font:400 9px var(--mono);color:var(--tx-3);margin-bottom:6px;line-height:1.5">
+            <b style="color:var(--tx-2)">Linear:</b> I/K=fwd/back J/L=left/right U/O=up/down<br>
+            <b style="color:var(--tx-2)">Rotate:</b> W/S=pitch A/D=roll Q/E=yaw<br>
+            <b style="color:var(--tx-2)">Other:</b> G=grip toggle H=home Esc=STOP<br>
+            <b style="color:var(--tx-2)">Gamepad:</b> L-stick=XY R-stick=rot D-pad=Z L/R=roll triggers=variable grip View=home Start=recover
+          </div>
+          <div id="teleop-zone" tabindex="0" style="
+            background:var(--bg-0);border-radius:var(--r);padding:10px;
+            text-align:center;cursor:pointer;transition:var(--fast);outline:none;
+            font:500 11px var(--sans);color:var(--tx-3);
+          " onfocus="this.style.color='var(--accent)'" onblur="this.style.color='var(--tx-3)'">
+            <div id="teleop-status">Click buttons or use keyboard</div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:6px" id="key-indicators">
+              <span class="key-ind jog-btn" data-k="i" onmousedown="jogStart('i')" onmouseup="jogStop('i')" onmouseleave="jogStop('i')" ontouchstart="jogStart('i')" ontouchend="jogStop('i')">I<small>fwd</small></span>
+              <span class="key-ind jog-btn" data-k="k" onmousedown="jogStart('k')" onmouseup="jogStop('k')" onmouseleave="jogStop('k')" ontouchstart="jogStart('k')" ontouchend="jogStop('k')">K<small>back</small></span>
+              <span class="key-ind jog-btn" data-k="j" onmousedown="jogStart('j')" onmouseup="jogStop('j')" onmouseleave="jogStop('j')" ontouchstart="jogStart('j')" ontouchend="jogStop('j')">J<small>left</small></span>
+              <span class="key-ind jog-btn" data-k="l" onmousedown="jogStart('l')" onmouseup="jogStop('l')" onmouseleave="jogStop('l')" ontouchstart="jogStart('l')" ontouchend="jogStop('l')">L<small>right</small></span>
+              <span class="key-ind jog-btn" data-k="u" onmousedown="jogStart('u')" onmouseup="jogStop('u')" onmouseleave="jogStop('u')" ontouchstart="jogStart('u')" ontouchend="jogStop('u')">U<small>up</small></span>
+              <span class="key-ind jog-btn" data-k="o" onmousedown="jogStart('o')" onmouseup="jogStop('o')" onmouseleave="jogStop('o')" ontouchstart="jogStart('o')" ontouchend="jogStop('o')">O<small>down</small></span>
+              <span class="key-ind jog-btn" data-k="g" onclick="gripperOpen=!gripperOpen;grip(gripperOpen?'open':'close')">G<small>grip</small></span>
+              <span class="key-ind jog-btn" data-k="w" onmousedown="jogStart('w')" onmouseup="jogStop('w')" onmouseleave="jogStop('w')" ontouchstart="jogStart('w')" ontouchend="jogStop('w')">W<small>pitch+</small></span>
+              <span class="key-ind jog-btn" data-k="s" onmousedown="jogStart('s')" onmouseup="jogStop('s')" onmouseleave="jogStop('s')" ontouchstart="jogStart('s')" ontouchend="jogStop('s')">S<small>pitch-</small></span>
+              <span class="key-ind jog-btn" data-k="a" onmousedown="jogStart('a')" onmouseup="jogStop('a')" onmouseleave="jogStop('a')" ontouchstart="jogStart('a')" ontouchend="jogStop('a')">A<small>roll+</small></span>
+              <span class="key-ind jog-btn" data-k="d" onmousedown="jogStart('d')" onmouseup="jogStop('d')" onmouseleave="jogStop('d')" ontouchstart="jogStart('d')" ontouchend="jogStop('d')">D<small>roll-</small></span>
+              <span class="key-ind jog-btn" data-k="q" onmousedown="jogStart('q')" onmouseup="jogStop('q')" onmouseleave="jogStop('q')" ontouchstart="jogStart('q')" ontouchend="jogStop('q')">Q<small>yaw+</small></span>
+              <span class="key-ind jog-btn" data-k="e" onmousedown="jogStart('e')" onmouseup="jogStop('e')" onmouseleave="jogStop('e')" ontouchstart="jogStart('e')" ontouchend="jogStop('e')">E<small>yaw-</small></span>
+              <span class="key-ind jog-btn" style="background:var(--red-15);border-color:var(--red)" onclick="doStop()">ESC<small>stop</small></span>
+            </div>
+            <div style="display:flex;gap:4px;margin-top:5px;justify-content:center">
+              <button class="btn btn-s" onclick="doHome()" style="flex:1">Home</button>
+              <button class="btn btn-s" onclick="doRecover()" style="flex:1" title="Clear reflex / protective-stop without homing. Use this when teleop says no motion after hitting a singularity or joint limit.">Recover</button>
+              <button class="btn btn-s btn-d" onclick="doStop()" style="flex:1">STOP</button>
+            </div>
+            <div id="gamepad-status" style="font:400 10px var(--mono);color:var(--tx-3);margin-top:6px"></div>
+            <label class="opt" style="font-size:10px;margin-top:5px;color:var(--tx-3)">
+              <input type="checkbox" onchange="gamepadLogInput=this.checked" title="Log the raw index of each button/axis you press, to re-map a non-standard controller">
+              log gamepad input (press a button to see its index)
+            </label>
+          </div>
+        </div>
+
+        <!-- BT Library: browse cached behaviour-trees, toggle cache-vs-Gemini
+             for the NEXT /api/execute, pin a specific BT (single-shot),
+             promote/unpromote, delete. Read-on-each-call so no server
+             restart is needed after flipping the toggle. -->
+        <div class="sec">
+          <div class="sec-h" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="_btLibToggleCollapse()">
+            <span>BT Library <span id="bt-lib-count" style="color:var(--cyan);font-weight:400">(0)</span></span>
+            <span id="bt-lib-collapse-ind" style="color:var(--tx-3);font-size:10px">&#9662;</span>
+          </div>
+          <div id="bt-lib-body">
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+              <button id="bt-lib-toggle-btn" class="btn btn-s" onclick="_btLibToggleCache()" style="flex:1" title="Use Gemini for the next /api/execute, or serve a cached BT from this library. UI override beats the SPARK_DISABLE_LLM env var.">Loading...</button>
+              <button class="btn btn-s" onclick="_btLibRefresh()" style="flex:0 0 auto;padding:5px 8px" title="Refresh now (auto-polls every 10s)">&#8635;</button>
+            </div>
+            <div id="bt-lib-source" style="font:400 9px var(--mono);color:var(--tx-3);margin-bottom:6px"></div>
+            <div id="bt-lib-pin-banner" style="font:500 10px var(--mono);color:var(--cyan);background:var(--cyan-15);border:1px solid var(--cyan-30);border-radius:var(--r);padding:5px 8px;margin-bottom:6px;display:none">
+              <span id="bt-lib-pin-text">pinned</span>
+              <span style="float:right;cursor:pointer;color:var(--tx-2)" onclick="_btLibUnpin()" title="Clear pin">&#10005;</span>
+            </div>
+            <input type="text" id="bt-lib-search" placeholder="filter by instruction..." oninput="_btLibRender()" style="margin-bottom:6px;font-size:11px;padding:4px 8px">
+            <div id="bt-lib-list" style="max-height:300px;overflow-y:auto;border-radius:var(--r);background:var(--bg-0)">
+              <div style="padding:8px;color:var(--tx-3);font:400 10px var(--mono);text-align:center">loading...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-h">Diagnostics</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn" style="flex:1" onclick="logPose()" title="Log current TCP pose and gripper state">Log Pose</button>
+            <button class="btn only-ur10e" style="flex:1" onclick="testYaw()" title="UR10e: cycle 0/30/60 deg wrist yaw to identify gripper closing axis">Test Yaw</button>
+          </div>
+        </div>
+
+        <div class="sec">
+          <button class="btn btn-f btn-d" onclick="doPass()" title="Stop the run and record this episode as a SUCCESS"
+                  style="font-size:13px;padding:10px;background:var(--grn-15);border-color:var(--grn);color:var(--grn)">
+            <svg viewBox="0 0 24 24" style="width:16px;height:16px" fill="none" stroke="currentColor" stroke-width="3">
+              <path d="M4 13l5 5L20 6"/></svg>
+            PASS &nbsp;(stop + mark success)
+          </button>
+          <button class="btn btn-f btn-d" onclick="doStop()" title="Stop the run; the episode is kept and labelled FAIL"
+                  style="font-size:13px;padding:10px;margin-top:6px">
+            <svg viewBox="0 0 24 24" style="width:16px;height:16px"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+            EMERGENCY STOP &nbsp;(Esc)
+          </button>
+        </div>
+      </div>
+
+      <!-- LOG -->
+      <div class="pane" id="p-log">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="sec-h" style="margin:0;border:none;padding:0">System Log</div>
+          <button class="btn btn-s" onclick="clearLog()">Clear</button>
+        </div>
+        <div class="log" id="log">
+          <div class="log-e"><span class="log-t">--:--:--</span><span class="log-m inf">SPARK ready</span></div>
+        </div>
+      </div>
+
+      <!-- HISTORY -->
+      <div class="pane" id="p-hist">
+        <div class="sec-h">Task History</div>
+        <div id="hist-list"><div class="empty-msg">No tasks yet</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/camera.js"></script>
+<script src="/static/js/detect.js"></script>
+<script src="/static/js/execute.js"></script>
+<script src="/static/js/score.js"></script>
+<script src="/static/js/robot.js"></script>
+<script src="/static/js/teleop.js"></script>
+<script src="/static/js/ui.js"></script>
+<script src="/static/js/feed.js"></script>
+<script src="/static/js/boot.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,184 @@
+# Bimanual Franka defaults: Panda (left) + FR3 (right), external jaws, one
+# static ZED Mini plus one webcam per gripper. Rig values (IPs, gripper
+# channels, camera devices, measured base offsets) belong in
+# configs/machines/<host>.yaml (see machines/bimanual_example.yaml).
+# Launch: python -m spark_real.server --robot bimanual --machine <host>
+
+robot:
+  left_ip: null            # Panda FCI address
+  right_ip: null           # FR3 FCI address (--ip overrides it)
+  frequency: 1000
+  backend: "bamboo"        # bamboo (joint impedance, the validated backend) | franky
+  # Mirror-symmetric ready poses (rad); the elbows fold outward.
+  home_config_left: [-0.010472, -0.537561, 0.0, -2.197370, 0.019199, 1.673771, -0.797615]
+  home_config_right: [0.010472, -0.537561, 0.0, -2.197370, -0.019199, 1.673771, 0.797615]
+  # Arm bases in the rig frame (table center, +x forward, +y left, +z up),
+  # used by the inter-arm distance gate. PLACEHOLDERS: measure the mounts.
+  base_left: {xyz: [0.00, 0.32, 0.00], rpy: [0, 0, 0.0]}
+  base_right: {xyz: [0.00, -0.32, 0.00], rpy: [0, 0, 0.0]}
+  max_joint_velocity: 1.05
+  max_linear_velocity: 0.15
+
+# One jaw per arm from the gripper registry (spark_real.grippers): any
+# registered type with a per-arm transport (ssg48, dynamixel, franka_hand).
+grippers:
+  type: "ssg48"
+  bustype: "slcan"
+  bitrate: 1000000
+  node_id: 0
+  position_deadband: 5
+  max_force_ma: 1300
+  width_open_m: 0.090      # reachable stroke with the installed jaws
+  width_closed_m: 0.000
+  # Flange to closed jaw tip along flange +Z: the executor TCP. Must equal
+  # grip_offset_m in calibration_bimanual.json (bimanual_anchor_tap --grip-offset).
+  tcp_offset_m: 0.1275
+  left:
+    channel: null          # slcan device of the left jaw, e.g. /dev/ttyACM0
+    auto_calibrate: true
+    default_speed: 100
+    default_force_ma: 800
+  right:
+    channel: null
+    auto_calibrate: true
+    default_speed: 75
+    default_force_ma: 800
+  # Dynamixel instead: type: "dynamixel", port: "/dev/ttyUSB0",
+  # baudrate: 1000000, left: {id: 1}, right: {id: 2}, and tcp_offset_m for those jaws.
+
+# Per-arm boxes (each arm's base frame). PLACEHOLDERS: measure the cell.
+workspace_left:
+  x_min: -0.20
+  x_max: 0.85
+  y_min: -0.05
+  y_max: 0.85
+  z_min: 0.00
+  z_max: 1.10
+  reach_max: 0.855
+  eta_kinematic: 5.0
+
+workspace_right:
+  x_min: -0.20
+  x_max: 0.85
+  y_min: -0.85
+  y_max: 0.05
+  z_min: 0.00
+  z_max: 1.10
+  reach_max: 0.855
+  eta_kinematic: 5.0
+
+# Jaw-tip floor in each arm's base frame (bases at table height).
+table_z_floor: 0.0
+
+control:
+  grasp_orientation: [3.14159, 0.0, 0.0]   # tool Z down
+  max_velocity: 0.10
+
+# Rig motion path for the typed bimanual primitives (control/bimanual_motion.py,
+# skills/bimanual_primitives.py): PyRoki IK for the flange link, joint moves.
+# Heights are jaw-tip z in each arm's base frame; table near z = 0.
+bimanual_motion:
+  flange_z_offset_m: 0.103     # IK flange target above the jaw-tip target
+  left_yaw_offset_deg: 90.0    # left jaw line is mounted 90 deg from the right
+  left_z_correction_m: 0.0     # measured left-minus-right height discrepancy
+  move_vel: 0.22
+  approach_vel: 0.08
+  arc_vel: 0.16
+  close_force_ma: 1300         # SSG-48 full-current close
+  holding_raw_min: 100         # jaw closure (0..255) above this = closed on something
+  empty_raw_min: 250           # at or above this = closed on air
+  approach_z: 0.05
+  grasp_z: -0.015
+  lift_dz: 0.06
+  safe_z: 0.10
+  arc_peak: 0.040
+  land_z: 0.025
+
+# Inter-arm distance gate: motions toward the other arm slow below
+# dist_soft_m and are rejected below dist_hard_m (jaw tip to jaw tip).
+inter_arm:
+  dist_hard_m: 0.12
+  dist_soft_m: 0.20
+  eta_kinematic: 8.0
+
+# libfranka collision thresholds for both arms (franky backend). 25 N: the
+# FR3 contact-force estimate spikes during descent and tripped the
+# Cartesian reflex at 10 N with no contact.
+collision_behavior:
+  joint_torque_nom_lower: [20.0, 20.0, 18.0, 18.0, 16.0, 14.0, 12.0]
+  joint_torque_nom_upper: [20.0, 20.0, 18.0, 18.0, 16.0, 14.0, 12.0]
+  cartesian_force_nom_lower: [25.0, 25.0, 25.0, 25.0, 25.0, 25.0]
+  cartesian_force_nom_upper: [25.0, 25.0, 25.0, 25.0, 25.0, 25.0]
+
+timeouts:
+  move_to_keypoint: 30.0   # copied from the UR10e, not re-measured here
+  move_relative: 2.0
+  grasp: 25.0
+  release: 20.0
+  default: 8.0
+
+# Cameras (perception/camera_registry.py build_camera_registry): roles are
+# the contract. `external` is the scene camera; wrist_<arm> ride the jaws.
+# Identical webcams often share one USB serial, so bind them by
+# /dev/v4l/by-path/... in the machine overlay.
+cameras:
+  - role: "external"
+    type: "zed_mini"
+    serial: null             # null: the only ZED on the bus
+    width: 1280
+    height: 720
+    fps: 30
+    depth_mode: "NEURAL"
+    flip: "auto"             # "on" if the feed shows upside down
+  - role: "wrist_left"
+    type: "webcam"
+    arm: "left"
+    device: null
+    width: 640
+    height: 480
+    fps: 30
+  - role: "wrist_right"
+    type: "webcam"
+    arm: "right"
+    device: null
+    width: 640
+    height: 480
+    fps: 30
+
+# No Kinects or wrist RealSense on this rig.
+use_kinect: false
+use_realsense: false
+
+bt:
+  seed_on_start: false
+
+verification:
+  enabled: true
+  min_conf: 0.35
+  require_two_views: false
+  inside_xy_margin_m: -0.02
+  inside_z_tol_m: 0.06
+  fallback_2d_containment: 1.01
+  on_missing: unverified
+  retry_on_fail: false
+  release_verdict: false
+  attribution: false
+
+perception:
+  rebind:
+    enabled: true
+    log_drift_cm: 2.0
+  sticky:
+    enabled: false
+    gate_m: 0.12
+    ambiguity_sep_m: 0.03
+    dedup_radius_m: 0.02
+  fusion:
+    enabled: false
+
+place:
+  release_giveback: false
+
+trace:
+  enabled: true
+  save_images: false

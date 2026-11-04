@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.venv*/
+
+# LIBERO config written by scripts/setup.sh
+.libero/
+
+# run outputs
+results/
+out/
+output/
+bt_library/
+MUJOCO_LOG.TXT
+*.log
+*.mp4
+
+# weights, keys, per-machine rig files
+*.pt
+*.pth
+.env
+*api_key*
+src/spark_real/configs/machines/*.yaml
+!src/spark_real/configs/machines/example.yaml
+!src/spark_real/configs/machines/franka_example.yaml
+!src/spark_real/configs/machines/bimanual_example.yaml

@@ -1,0 +1,24 @@
+# Per-machine overlay template. Copy to configs/machines/<host>.yaml (gitignored)
+# and launch with --machine <host>; it is deep-merged over ur10e_default.yaml.
+
+robot:
+  ip: "192.0.2.10"              # UR controller IP
+
+gripper:
+  script: null                  # path to your exported Robotiq URScript
+
+cameras:
+  - role: "birdview"
+    type: "kinect"
+    serial: "REPLACE_WITH_BIRDVIEW_SERIAL"   # optional with one Kinect
+    sync: "subordinate"
+  - role: "sideview"
+    type: "kinect"
+    serial: "REPLACE_WITH_SIDEVIEW_SERIAL"
+    sync: "master"                           # used with kinect_use_hw_sync
+  - role: "wrist"
+    type: "realsense"
+    serial: "REPLACE_WITH_REALSENSE_SERIAL"
+    width: 640
+    height: 480
+    enabled: true

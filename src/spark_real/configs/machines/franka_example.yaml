@@ -1,0 +1,24 @@
+# Per-machine overlay template for the Franka FR3. Copy to
+# configs/machines/<host>.yaml (gitignored) and launch with
+# --robot franka --machine <host>; it is deep-merged over franka_default.yaml.
+
+robot:
+  ip: "192.0.2.20"              # FCI address (Desk: activate FCI first)
+
+kinect_use_hw_sync: false        # true with the sync cable between the Kinects
+
+cameras:
+  - role: "birdview"
+    type: "kinect"
+    serial: "REPLACE_WITH_BIRDVIEW_SERIAL"
+    sync: "subordinate"
+  - role: "sideview"
+    type: "kinect"
+    serial: "REPLACE_WITH_SIDEVIEW_SERIAL"
+    sync: "master"
+  - role: "wrist"
+    type: "realsense"
+    serial: "REPLACE_WITH_REALSENSE_SERIAL"
+    width: 640
+    height: 480
+    enabled: true

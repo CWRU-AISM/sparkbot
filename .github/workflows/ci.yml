@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    # CPU only: spark_core and spark_bench unit tests with the protocol pins (no LIBERO, no SAM3
+    # weights, no GPU). test_imports checks spark_core loads no robot or camera module.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          sudo apt-get update && sudo apt-get install -y libegl1   # spark_bench.fair defaults MUJOCO_GL=egl
+          pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[bench,dev]"
+      - name: Hygiene gates
+        run: bash scripts/check_hygiene.sh
+      - name: Lint
+        run: ruff check src
+      - name: Test
+        run: python -m pytest -m "not slow"

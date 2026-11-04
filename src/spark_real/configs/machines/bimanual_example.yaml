@@ -1,0 +1,48 @@
+# Per-machine overlay template for the bimanual Franka rig. Copy to
+# configs/machines/<host>.yaml (gitignored) and launch with
+# --robot bimanual --machine <host>; it is deep-merged over
+# bimanual_franka_default.yaml.
+#
+# Measure before coordinated motion: robot.base_left/base_right,
+# workspace_left/right and inter_arm are placeholders in the family
+# default. Wrong base offsets make the inter-arm distance gate wrong.
+
+robot:
+  left_ip: "192.0.2.21"          # Panda FCI address
+  right_ip: "192.0.2.22"         # FR3 FCI address
+  backend: "bamboo"              # needs SPARK_BAMBOO_BINARY (docs/real_world.md)
+  # base_left: {xyz: [x, y, z], rpy: [r, p, y]}
+  # base_right: {xyz: [x, y, z], rpy: [r, p, y]}
+
+grippers:
+  type: "ssg48"
+  tcp_offset_m: 0.1275           # re-measure flange -> closed jaw tip if the jaws change
+  # Verify the mapping: Open on the left arm must move the left jaw.
+  left:
+    channel: "/dev/ttyACM0"
+  right:
+    channel: "/dev/ttyACM1"
+
+cameras:
+  - role: "external"
+    type: "zed_mini"
+    serial: null
+    width: 1280
+    height: 720
+    fps: 30
+    depth_mode: "NEURAL"
+    flip: "auto"
+  - role: "wrist_left"
+    type: "webcam"
+    arm: "left"
+    device: "REPLACE_WITH_/dev/v4l/by-path/<left-hub-port>-video-index0"
+    width: 640
+    height: 480
+    fps: 30
+  - role: "wrist_right"
+    type: "webcam"
+    arm: "right"
+    device: "REPLACE_WITH_/dev/v4l/by-path/<right-hub-port>-video-index0"
+    width: 640
+    height: 480
+    fps: 30
