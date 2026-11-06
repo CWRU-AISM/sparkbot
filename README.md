@@ -83,6 +83,4 @@ third_party/      LIBERO, LIBERO-PRO, SAM3 (submodules at the pinned revisions)
 
 ## License
 
-Apache-2.0. The submodules in `third_party/` ([LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO),
-[LIBERO-PRO](https://github.com/Zxy-MLlab/LIBERO-PRO), [SAM3](https://github.com/facebookresearch/sam3))
-and the model weights keep their own licenses.
+Apache-2.0.
