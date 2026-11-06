@@ -79,7 +79,7 @@ async def detect_for_approval(req: DetectApproveRequest):
 
         # Registry first, LLM second. A registered task has its prompts and
         # its instance ordering pinned in version control, so this both skips
-        # a Gemini call and removes the run-to-run prompt drift that
+        # an LLM call and removes the run-to-run prompt drift that
         # generate_prompts introduces at temperature 0.3, which makes a
         # cached BT unsafe.
         spec = pipeline.task_spec(req.instruction)

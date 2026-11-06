@@ -64,6 +64,8 @@ bench = [
 ]
 # Gemini planner backend (SPARK_LLM_BACKEND=gemini, GEMINI_API_KEY).
 gemini = ["google-genai"]
+# Anthropic planner backend (SPARK_LLM_BACKEND=anthropic, ANTHROPIC_API_KEY).
+anthropic = ["anthropic"]
 # UR10e real-robot module (spark_real). Depth Anything 3 installs from source if used.
 ur10e = [
     "ur-rtde>=1.5.6",

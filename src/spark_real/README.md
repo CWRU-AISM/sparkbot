@@ -62,8 +62,12 @@ Environment:
 |---|---|
 | `SPARK_OUTPUT_DIR` | output root (default `./output`); calibrations live in `<root>/calibrations` |
 | `SPARK_GRIPPER_SCRIPT` | Robotiq URScript export, when `gripper.script` is unset |
-| `SPARK_LLM_BACKEND`, `SPARK_LLM_MODEL` | planner backend and model (see spark_core) |
-| `OPENAI_API_KEY` / `GEMINI_API_KEY` | planner credentials |
+| `SPARK_LLM_BACKEND` | `openai` (default: any OpenAI-compatible endpoint), `anthropic` or `gemini` |
+| `SPARK_LLM_MODEL` | model name; default Qwen3.8-27B on `openai`, claude-opus-5-5 on `anthropic`, gemini-3.5-flash on `gemini` |
+| `SPARK_VERIFY_LLM` | `0` stops the planner LLM from checking runs that geometry could not verify |
+| `OPENAI_BASE_URL` | endpoint, e.g. `http://127.0.0.1:8000/v1` from `scripts/serve_planner.sh` |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | planner credentials (`anthropic` and `gemini` also need their uv extra) |
+| `ANTHROPIC_WORKSPACE_ID` | only for an Anthropic key not scoped to a workspace |
 
 ## Robotiq gripper script
 

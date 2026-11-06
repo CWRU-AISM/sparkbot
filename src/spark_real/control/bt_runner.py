@@ -127,7 +127,7 @@ class BtRunnerMixin:
         two equivalent grasp yaws knowing the destination. A parallel gripper
         closes identically at yaw and yaw+180, but the choice fixes which way
         the held object points, and therefore the yaw the place will need
-        (which can land past the +-100 deg wrist limit and seat the tool
+        (which can land past the wrist limit and seat the tool
         END-FOR-END).
         """
         for node in actions or []:

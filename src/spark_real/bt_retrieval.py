@@ -14,6 +14,7 @@ from spark_real.bt_keys import (
     _near_exact_key,
     _norm,
     _ordered_tokens,
+    count_differs,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,11 @@ class BTRetrievalMixin:
         if not key:
             return []
         hits = [
-            e for e in self._entries.values() if key in e.near_keys() and e.success >= min_success
+            e
+            for e in self._entries.values()
+            if key in e.near_keys()
+            and e.success >= min_success
+            and not count_differs(instruction, e.keys())
         ]
         hits.sort(key=self._rank_key, reverse=True)
         return hits
@@ -141,7 +146,7 @@ class BTRetrievalMixin:
 
         With ``require_cached`` a miss raises ``BTCacheMiss`` instead of
         letting the caller fall through to the LLM. Demo collection runs
-        with this on: a silent Gemini call mid-collection produces an
+        with this on: a silent LLM call mid-collection produces an
         episode whose plan nobody froze.
         """
         match = self.lookup(

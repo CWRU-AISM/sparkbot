@@ -2,7 +2,7 @@
 Full task-run orchestration for the SPARK real-robot pipeline.
 
 Houses the closed-loop ``run_task`` driver that ties capture, SAM3
-detection, Gemini planning, and robot execution together. RunMixin is
+detection, LLM planning, and robot execution together. RunMixin is
 mixed into SPARKRealPipeline alongside ExecutionMixin, so the cross-mixin
 self.plan() / self.execute() / self.evaluate_scene_progress() calls
 resolve against the assembled class via MRO.
@@ -81,10 +81,10 @@ class RunMixin(ClosedLoopMixin):
             saved_paths = self._save_captures(captures, timestamp)
 
         # Detect: two-phase approach:
-        #   Phase 1: If no prompts given, ask Gemini to look at the scene
+        #   Phase 1: If no prompts given, ask the planner to look at the scene
         #            and decide what to detect.
         #   Phase 2: Run SAM3 with those prompts, then send annotated
-        #            results back to Gemini for planning.
+        #            results back to the planner for planning.
         # Collect EVERY fixed view, not the first one that exists. A single
         # camera foreshortens: an elongated tool lying away from that image
         # plane reads far rounder than it is. The API takes several images in
@@ -106,7 +106,7 @@ class RunMixin(ClosedLoopMixin):
 
         # Resolve the cached BT ONCE, up front. Two things ride on it:
         #   - the SAM3 detection prompts are harvested from the tree's own
-        #     labels, which skips the Gemini prompt-generation call so a
+        #     labels, which skips the LLM prompt-generation call so a
         #     cache-only run is genuinely offline, and
         #   - plan() below is handed the SAME match, so the harvest and the
         #     executed tree can never disagree about which BT this run is.
@@ -124,7 +124,7 @@ class RunMixin(ClosedLoopMixin):
         # Task-prompt registry (configs/tasks/*.yaml): the task's frozen
         # perception contract -- pinned vocabulary, declared object counts,
         # and a deterministic geometric instance ordering. Sits ahead of BOTH
-        # the regex extractor and Gemini because it is the only prompt source
+        # the regex extractor and the LLM because it is the only prompt source
         # that is identical run to run; generate_prompts runs at temperature
         # 0.3, so the prompt VOCABULARY itself drifts, which is exactly the
         # non-repeatability a demo corpus must not have.
@@ -156,7 +156,7 @@ class RunMixin(ClosedLoopMixin):
             )
         if prompts is None and _plan_mode == "cache_only":
             # Strict offline: never fall through to the planner for prompts.
-            # The regex extractor is a legitimate offline fallback; Gemini is
+            # The regex extractor is a legitimate offline fallback; the LLM is
             # not. The task registry above covers the demo tasks without
             # either; this is the backstop for an unregistered instruction.
             prompts = self._extract_prompts(instruction)
@@ -167,22 +167,22 @@ class RunMixin(ClosedLoopMixin):
             )
         if prompts is None:
             if self._planner is not None and scene_img_raw is not None:
-                logger.info("[2/5] Asking Gemini for detection prompts...")
+                logger.info("[2/5] Asking the planner for detection prompts...")
                 try:
                     with self.activity("planning"):
                         prompts = self._planner.generate_prompts(instruction, scene_img_raw)
-                    use_multi_instance = True  # Gemini prompts -> batch task -> multi-instance
-                    logger.info("  Gemini prompts: %s", prompts)
+                    use_multi_instance = True  # LLM prompts -> batch task -> multi-instance
+                    logger.info("  LLM prompts: %s", prompts)
                 except Exception as e:
                     logger.warning(
-                        "  Gemini prompt generation failed: %s, falling back to regex",
+                        "  LLM prompt generation failed: %s, falling back to regex",
                         e,
                     )
                     prompts = self._extract_prompts(instruction)
             else:
                 prompts = self._extract_prompts(instruction)
 
-        # SAM3 detection: multi-instance only for Gemini-generated prompts (batch tasks).
+        # SAM3 detection: multi-instance only for LLM-generated prompts (batch tasks).
         # User-provided prompts get top-1 per prompt (specific objects).
         logger.info(
             "[3/5] Detecting objects: %s (multi_instance=%s)",
@@ -239,7 +239,7 @@ class RunMixin(ClosedLoopMixin):
                 getattr(d, "camera", "?"),
             )
 
-        # Plan: send Gemini the annotated image + detection details
+        # Plan: send the planner the annotated image + detection details
         # so it can filter false positives and generate the plan.
         logger.info("[4/5] Generating plan...")
         scene_img_annotated = None

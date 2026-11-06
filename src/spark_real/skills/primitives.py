@@ -221,7 +221,7 @@ def release(executor, params: dict):
     current = executor._get_current_position()
     retract = current.copy()
     retract[2] += 0.05
-    executor._move_to(retract, executor.GRASP_ORIENTATION)
+    executor._move_to(retract, executor.current_orientation())
     return _result("release", True, "Released", time.time() - t0)
 
 

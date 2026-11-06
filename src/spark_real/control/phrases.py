@@ -323,7 +323,7 @@ class PhraseMixin:
                 lead.append(
                     (
                         running.copy(),
-                        list(self.GRASP_ORIENTATION),
+                        self.current_orientation(),
                         self.velocity,
                         "rel%d(dz=%.2f)" % (k, params.get("dz", 0.0)),
                     )

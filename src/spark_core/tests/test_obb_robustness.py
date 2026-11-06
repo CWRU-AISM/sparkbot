@@ -180,3 +180,44 @@ def test_return_arity_is_unchanged_by_default():
     )
     assert len(out) == 4
     assert len(_obb(mask, depth)) == 5
+
+
+# --- a tilted top surface (SPARK_OBB_TILT_FIT) ---
+_FX, _H, _W = 600.0, 720, 1280
+_U, _V = np.meshgrid(np.arange(_W), np.arange(_H))
+_X, _Y = (_U - _W / 2) / _FX, -(_V - _H / 2) / _FX
+
+
+def _overhead_obb(monkeypatch, a, b, yaw_deg, zfun, noise=0.0015):
+    """(axis error in deg, aspect ratio) from a camera 1 m above an a x b footprint."""
+    monkeypatch.setenv("SPARK_OBB_TILT_FIT", "1")
+    t = np.deg2rad(yaw_deg)
+    p, q = _X * np.cos(t) + _Y * np.sin(t), -_X * np.sin(t) + _Y * np.cos(t)
+    mask = (abs(p) < a / 2) & (abs(q) < b / 2)
+    depth = 1 - zfun(p, q) + np.random.default_rng(0).normal(0, noise, p.shape)
+    angle, ar, *_ = _world_xy_pca_obb(
+        mask.astype(np.uint8), np.where(mask, depth, 0).astype(np.float32),
+        np.array([0, 0, 1.0]), np.diag([1.0, -1.0, -1.0]),
+        fx=_FX, fy=_FX, cx_k=_W / 2, cy_k=_H / 2, use_opencv=True,
+    )
+    return abs((np.rad2deg(angle) - yaw_deg + 90) % 180 - 90), ar
+
+
+@pytest.mark.parametrize("tilt_deg", [0.0, 1.0, 1.5, 3.0])
+def test_tilted_tray_keeps_its_long_axis(monkeypatch, tilt_deg):
+    def tray(p, q):
+        rim = (abs(p) > 0.162) | (abs(q) > 0.0965)
+        return np.where(rim, 0.04, 0.01) + np.tan(np.deg2rad(tilt_deg)) * _X
+    err, ar = _overhead_obb(monkeypatch, 0.348, 0.217, 30, tray)
+    assert err < 3 and ar == pytest.approx(1.6, abs=0.1)
+
+
+def test_spoon_raised_at_one_end_stays_elongated(monkeypatch):
+    err, ar = _overhead_obb(monkeypatch, 0.20, 0.02, 40, lambda p, q: 0.005 + 0.02 * (p + 0.1) / 0.2)
+    assert err < 3 and ar > 8
+
+
+def test_box_side_face_stays_out_of_the_footprint(monkeypatch):
+    # 5 x 5 cm top at 5 cm height; the camera also sees a 2 cm band of side face, far below the top.
+    err, ar = _overhead_obb(monkeypatch, 0.07, 0.05, 0, lambda p, q: np.where(p > 0.015, 0.05 * (0.035 - p) / 0.02, 0.05))
+    assert ar < 1.15

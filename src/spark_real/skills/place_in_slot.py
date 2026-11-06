@@ -7,23 +7,72 @@ from spark_core.util import det_field as _field
 from spark_real.skills.registry import spark_skill
 from spark_real.skills.primitives import _result
 from spark_real.control.container_geometry import container_region, xy_inside_container
-from spark_real.control.grasp_strategy import compose_yaw
+from spark_real.bt_label_resolver import canon_label
+from spark_real.control.grasp_strategy import base_orientation, compose_yaw, measured_yaw_offset
+from spark_real.control.identity_binder import STATIC_MATCH_TOL_M
 from spark_real.perception.mask_features import resolve_slot_direction
 
 logger = logging.getLogger(__name__)
+
+
+def _point_head_along_slot(executor, yaw, orient):
+    """Choose yaw or yaw+-180 so every tool's working end points the same way along the slot.
+
+    The planner names the working end (planning/tool_ends.py).
+
+    The tool is rigid in the jaws, so the head stays at a fixed angle to the wrist: with the wrist
+    at `yaw` the head points along +yaw exactly when it points along the wrist's forward now.
+    """
+    label = getattr(executor, "_last_pick_label", "") or ""
+    head = (getattr(executor, "_tool_heads", None) or {}).get(label)
+    if head is None:
+        if hasattr(executor, "_nearest_symmetric_yaw"):
+            yaw = executor._nearest_symmetric_yaw(yaw)
+            orient = compose_yaw(executor, yaw, context="place_in_slot") or orient
+        logger.info("[place_in_slot] head direction unknown; least wrist travel (yaw=%.1f deg)",
+                    np.rad2deg(yaw))
+        return yaw, orient
+    now = measured_yaw_offset(executor.current_orientation(orient), base_orientation(executor))
+    if np.cos(np.arctan2(head[1], head[0]) - now) >= 0:
+        logger.info("[place_in_slot] head points along +slot at yaw=%.1f deg", np.rad2deg(yaw))
+        return yaw, orient
+    flipped = yaw - np.pi if yaw > 0 else yaw + np.pi
+    flipped_orient = compose_yaw(executor, flipped, context="place_in_slot")
+    if flipped_orient is None:
+        logger.warning(
+            "[place_in_slot] head needs yaw=%.1f deg, past the wrist limit; this one goes in "
+            "reversed. SPARK_MAX_YAW_OFFSET_DEG sets the limit.", np.rad2deg(flipped))
+        return yaw, orient
+    logger.info("[place_in_slot] turning the head along +slot: yaw=%.1f deg", np.rad2deg(flipped))
+    return flipped, flipped_orient
+
+
+def _still_on_table(executor, placed_label, xy):
+    """True when `xy` is where a same-kind object the tree has not placed yet is lying."""
+    placed = getattr(executor, "_placed_labels", ())
+    for label, other in (getattr(executor, "detection_map", None) or {}).items():
+        pos = other.get("position_3d") if label != placed_label and label not in placed else None
+        if (
+            pos is not None
+            and canon_label(label) == canon_label(placed_label)
+            and np.linalg.norm(np.asarray(pos[:2], dtype=float) - xy) <= STATIC_MATCH_TOL_M
+        ):
+            return True
+    return False
 
 
 @spark_skill(
     name="place_in_slot",
     description=(
         "Drop a held item into a specific slot of a labeled container, "
-        "rotating gripper yaw to align with the container's major axis."
+        "rotating gripper yaw to align with the slot."
     ),
     params={
         "container_label": str,
         "slot_idx": int,
         "release_height_m": float,
         "hover_clearance_m": float,
+        "grasp_yaw_deg": float,  # the slot's world direction, when the planner can see it
     },
 )
 def place_in_slot(executor, params: dict):
@@ -100,11 +149,13 @@ def place_in_slot(executor, params: dict):
 
     slot_z = float(pos[2])
 
-    # Reliable SLOT DIRECTION (the world angle a placed utensil must lie
-    # ALONG), shared with the generic-place path via mask_geometry so both
-    # align to the slots, not the axis-swapped container OBB. See
-    # resolve_slot_direction for the source-priority ladder.
-    slot_major_axis, slot_axis_source = resolve_slot_direction(det, container_label)
+    # The world angle a placed utensil must lie ALONG. An explicit angle from the
+    # planner wins, as on every place node; see resolve_slot_direction otherwise.
+    if params.get("grasp_yaw_deg") is not None:
+        slot_major_axis = np.deg2rad(float(params["grasp_yaw_deg"]))
+        slot_axis_source = "planner"
+    else:
+        slot_major_axis, slot_axis_source = resolve_slot_direction(det, container_label, slot_idx)
 
     def _clamp_to_tray(xy):
         """Project (xy - centroid) onto the tray's major/minor axes, clamp each
@@ -131,7 +182,7 @@ def place_in_slot(executor, params: dict):
     # Choose a slot target. Preference order:
     #   1. A detected slot center (from slot_detector) for this slot_idx,
     #      provided it falls inside the shrunk tray footprint.
-    #   2. Centroid plus a small, distinct per-slot offset along the minor
+    #   2. Centroid plus a small, distinct per-slot offset across the slots
     #      (perpendicular) axis, capped and clamped inside the footprint.
     mode = "centroid_offset"
     clamped_fired = False
@@ -184,7 +235,8 @@ def place_in_slot(executor, params: dict):
             signed = sign * magnitude
         cap = MAX_OFFSET_M if have_extent else NO_EXTENT_OFFSET_M
         signed = float(np.clip(signed, -cap, cap))
-        slot_xy = centroid_xy + signed * perp_unit
+        across = np.array([-np.sin(slot_major_axis), np.cos(slot_major_axis)])
+        slot_xy = centroid_xy + signed * across
         slot_xy, clamped_fired = _clamp_to_tray(slot_xy)
 
     logger.info(
@@ -216,9 +268,7 @@ def place_in_slot(executor, params: dict):
     # utensil grasped with _oriented_grasp(utensil_major) lies along world angle
     # `utensil_major`. Therefore, to make the held utensil lie ALONG the slot at
     # placement, command yaw = slot_direction directly: the opening axis (and
-    # thus the utensil's long axis) ends up along the slot. No +90 here; the
-    # perpendicular that maps tray_long_axis -> slot_direction was already
-    # applied inside mask_geometry.resolve_slot_direction().
+    # thus the utensil's long axis) ends up along the slot. No +90 here.
     #   Concrete check (see offline test at bottom): slots running along world X
     #   => slot_major_axis=0 => yaw=0 => opening axis along X => utensil ALONG X.
     yaw = slot_major_axis
@@ -240,40 +290,7 @@ def place_in_slot(executor, params: dict):
     if aligned_orient is None:
         aligned_orient = list(executor.GRASP_ORIENTATION)
 
-    # WHICH END GOES IN FIRST. A two-jaw gripper closes identically at yaw and
-    # yaw+pi, but once the tool is in the jaws, yaw and yaw+pi point its tip at
-    # opposite ends of the slot; a mod-pi reduction plus a least-wrist-travel
-    # tie-break makes the answer depend on where the wrist happened to be
-    # (correct when the tool started aligned with the slot, 180 deg off when it
-    # did not). _orient_head_to_head is the same directed decision the obb
-    # place path in executor_motion makes, so both placement paths answer this
-    # question the same way.
-    head_to_head = getattr(executor, "_orient_head_to_head", None)
-    if head_to_head is not None:
-        try:
-            directed = head_to_head(aligned_orient, det)
-        except Exception as exc:  # never let orientation polish kill the place
-            logger.warning(
-                "[place_in_slot] head/tail check failed (%s); "
-                "placing on the undirected axis",
-                exc,
-            )
-            directed = None
-        if directed is not None:
-            aligned_orient = directed
-    elif hasattr(executor, "_nearest_symmetric_yaw"):
-        # No directed evidence available at all. Least travel is then the only
-        # defensible tie-break -- but say so, because a silent coin-flip here
-        # is what a 180-off placement looks like from the outside.
-        yaw = executor._nearest_symmetric_yaw(yaw)
-        logger.info(
-            "[place_in_slot] no head/tail evidence; breaking the 180 deg tie "
-            "by least wrist travel (yaw=%.1f deg)",
-            np.rad2deg(yaw),
-        )
-        aligned_orient = (
-            compose_yaw(executor, yaw, context="place_in_slot") or aligned_orient
-        )
+    yaw, aligned_orient = _point_head_along_slot(executor, yaw, aligned_orient)
 
     hover_pos = np.array([slot_xy[0], slot_xy[1], hover_z])
     place_pos = np.array([slot_xy[0], slot_xy[1], place_z])
@@ -333,7 +350,7 @@ def place_in_slot(executor, params: dict):
                 else placed_label
             )
             captures = executor._pipeline.capture()
-            new_dets = executor._pipeline.detect(captures, prompts=[base_prompt])
+            new_dets = executor._pipeline.detect(captures, prompts=[base_prompt], multi_instance=True)
             cont_region = container_region(det)
             cont_xy = cont_region[0] if cont_region is not None else None
             placed_xy = None
@@ -343,6 +360,8 @@ def place_in_slot(executor, params: dict):
                 if p is None:
                     continue
                 cand_xy = np.asarray(p[:2], dtype=float)
+                if _still_on_table(executor, placed_label, cand_xy):
+                    continue
                 if cont_xy is None:
                     placed_xy = cand_xy
                     break

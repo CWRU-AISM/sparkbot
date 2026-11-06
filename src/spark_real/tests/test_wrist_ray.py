@@ -217,3 +217,75 @@ def test_ray_path_works_with_no_depth(monkeypatch):
         None,
         None,
     )
+
+
+def _refine_with_masks(monkeypatch, masks, scores):
+    """Run _refine_with_wrist with SAM3 stubbed; each mask's centroid pixel is its world xy in mm."""
+    from types import SimpleNamespace as NS
+
+    import torch
+
+    monkeypatch.setattr(motion_wrist, "compute_wrist_camera_extrinsic", lambda **kw: np.eye(4))
+    sam3 = NS(
+        set_image=lambda img: {},
+        set_text_prompt=lambda prompt, state: {
+            "masks": torch.tensor(np.stack(masks)),
+            "scores": torch.tensor(scores),
+        },
+    )
+    ex = MotionMixin.__new__(MotionMixin)
+    ex._wrist_refine_enabled = True
+    ex._wrist_refine_mode_cached = "ray_plane"
+    ex._servo = NS(_get_tcp_pose=lambda: np.zeros(6))
+    ex._pipeline = NS(
+        _realsense=NS(read=lambda: (np.zeros((60, 60, 3), np.uint8), None)),
+        _realsense_cal=NS(extrinsic=None),
+        _perception=NS(_sam3=sam3),
+        _wrist_tool_offset=None,
+    )
+    ex._wrist_pos_from_ray = lambda cal, cx, cy, *a, **k: (np.array([cx / 1000, cy / 1000, 0.0]), "stub")
+    return ex._refine_with_wrist("spoon handle", np.array([0.01, 0.01, 0.0]))
+
+
+def _blob(x):
+    m = np.zeros((60, 60), bool)
+    m[8:13, x - 2 : x + 3] = True  # centred at (x, 10)
+    return m
+
+
+def test_wrist_refine_takes_the_instance_nearest_the_binding(monkeypatch):
+    far_best_scored, near = _blob(50), _blob(10)
+    out = _refine_with_masks(monkeypatch, [far_best_scored, near], [0.9, 0.7])
+    np.testing.assert_allclose(out["position_3d"][:2], [0.010, 0.010])
+
+
+def test_wrist_refine_ignores_a_noise_mask_on_the_binding(monkeypatch):
+    out = _refine_with_masks(monkeypatch, [_blob(50), _blob(10)], [0.9, 0.2])
+    np.testing.assert_allclose(out["position_3d"][:2], [0.050, 0.010])
+
+
+def test_ik_honours_the_commanded_yaw_at_the_tip():
+    """A silent yaw+180 seated tools backwards and moved the tip by twice the TCP XY offset."""
+    pytest = __import__("pytest")
+    pytest.importorskip("pyroki")
+    from scipy.spatial.transform import Rotation as R
+
+    from spark_real.control import ur10e_ik_pyroki as ik
+
+    tcp = np.array([-0.011, -0.0013, 0.2326, 0.0094, 0.0022, 0.0397])
+    O = np.eye(4)
+    O[:3, :3] = R.from_rotvec(tcp[3:]).as_matrix()
+    O[:3, 3] = tcp[:3]
+    base = R.from_rotvec([-2.2836, -2.1399, 0.0231])
+    seed = np.array([3.6494, -2.0348, -1.15, 4.71, 1.5681, -0.7526])
+    tip = np.array([-0.904, -0.313, -0.224])
+    for yaw in (-101, -34, 79, 180):
+        want = (R.from_euler("z", yaw, degrees=True) * base).as_matrix()
+        q = ik.solve_ik_rtde(tip, want, seed, tcp)
+        p, Ru = ik.fk(q)
+        Rz = R.from_euler("z", np.pi).as_matrix()
+        T = np.eye(4)
+        T[:3, :3], T[:3, 3] = Rz @ Ru, Rz @ p
+        T = T @ O
+        assert np.linalg.norm(T[:3, 3] - tip) < 0.002
+        assert np.rad2deg(R.from_matrix(T[:3, :3].T @ want).magnitude()) < 1.0

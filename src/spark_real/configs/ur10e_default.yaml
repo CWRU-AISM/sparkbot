@@ -54,7 +54,7 @@ grasp:
   yaw_aspect_ratio_gate: 1.6  # oriented grasp only above this aspect ratio
   yaw_min_conf: 0.45          # no OBB yaw below this detection confidence
   yaw_min_obb_conf: 0.40      # no yaw below this OBB-axis confidence
-  max_yaw_offset_deg: 100     # wrist-3 cable limit for the oriented grasp
+  max_yaw_offset_deg: 140     # wrist-3 cable limit; a held tool can need up to 180 to face a set way
 
 # Task-success verification (control/success_verifier.py).
 verification:

@@ -57,26 +57,32 @@ class ApproachMixin:
 
         current = self._get_current_position()
         safe_z = self._safe_clearance_z(current, adjusted)
+        label = self._last_keypoint_label or ""
+        # The descent target only exists AFTER a wrist capture, so a phrase
+        # can only absorb it when refinement is off (the default here).
+        refine_pending = bool(
+            self._wrist_refine_enabled and label and self._wrist_refine_mode() != "off"
+        )
+        # A UR10e transit holds yaw: lift at the current yaw, arrive at the grasp yaw, or the
+        # wrist unwinds to yaw 0 and back. A wrist capture must stay at GRASP_ORIENTATION
+        # (WRIST_CAM_OFFSET_DEG assumes it). ponytail: FR3 still unwinds, it is unvalidated there.
+        hold_yaw = self._robot_family() == "ur10e" and not refine_pending
+        lift_orient = self.current_orientation() if hold_yaw else list(self.GRASP_ORIENTATION)
+        above_orient = list(orient) if hold_yaw else list(self.GRASP_ORIENTATION)
         transit = []
         if np.linalg.norm(adjusted - current) > 0.5:
             lift = current.copy()
             lift[2] = safe_z
-            transit.append((lift, list(self.GRASP_ORIENTATION), None, "lift"))
+            transit.append((lift, lift_orient, None, "lift"))
             above = adjusted.copy()
             above[2] = safe_z
-            transit.append((above, list(self.GRASP_ORIENTATION), None, "above"))
+            transit.append((above, above_orient, None, "above"))
         else:
             above = adjusted.copy()
             above[2] = max(adjusted[2] + 0.10, safe_z)
-            transit.append((above, list(self.GRASP_ORIENTATION), None, "above"))
+            transit.append((above, above_orient, None, "above"))
 
-        label = self._last_keypoint_label or ""
         if self._blend_enabled():
-            # The descent target only exists AFTER a wrist capture, so a phrase
-            # can only absorb it when refinement is off (the default here).
-            refine_pending = bool(
-                self._wrist_refine_enabled and label and self._wrist_refine_mode() != "off"
-            )
             phrase = list(transit)
             with_descent = not refine_pending
             if with_descent:
@@ -116,36 +122,37 @@ class ApproachMixin:
                     ):
                         adjusted[2] = new_pos[2] + self.GRIPPER_OPEN_Z_OFFSET
                     logger.info("Wrist XY refine: delta=%.3fm", xy_diff)
+                    # The fix is the same object, so its geometry applies too. Past the
+                    # gate it is some other object, and so is its yaw.
+                    # Re-resolve with the wrist's own AR/angle, keeping the source
+                    # detection's confidence: same strategy rules, fresher geometry.
+                    img_deg = np.rad2deg(refined["orientation_angle"])
+                    yaw_deg = (img_deg % 180) - self.WRIST_CAM_OFFSET_DEG
+                    if yaw_deg > 90:
+                        yaw_deg -= 180
+                    if yaw_deg < -90:
+                        yaw_deg += 180
+                    wrist_det = dict(detection or {})
+                    wrist_det["aspect_ratio"] = refined["aspect_ratio"]
+                    wrist_det["orientation_angle"] = refined["orientation_angle"]
+                    wrist_orient, wrist_strategy = resolve_grasp_orientation(
+                        params or {},
+                        wrist_det,
+                        self,
+                        yaw_override_rad=np.deg2rad(yaw_deg),
+                        context="wrist-refine",
+                    )
+                    if wrist_strategy == "obb":
+                        orient = wrist_orient
+                        self._active_grasp_strategy = wrist_strategy
+                        logger.info(
+                            "Wrist grasp: img=%.1f deg -> yaw=%.1f deg (ar=%.1f)",
+                            img_deg,
+                            yaw_deg,
+                            refined["aspect_ratio"],
+                        )
                 else:
                     logger.info("Wrist XY too far (%.3fm), keeping birdview", xy_diff)
-
-                # Re-resolve with the wrist's own AR/angle, keeping the source
-                # detection's confidence: same strategy rules, fresher geometry.
-                img_deg = np.rad2deg(refined["orientation_angle"])
-                yaw_deg = (img_deg % 180) - self.WRIST_CAM_OFFSET_DEG
-                if yaw_deg > 90:
-                    yaw_deg -= 180
-                if yaw_deg < -90:
-                    yaw_deg += 180
-                wrist_det = dict(detection or {})
-                wrist_det["aspect_ratio"] = refined["aspect_ratio"]
-                wrist_det["orientation_angle"] = refined["orientation_angle"]
-                wrist_orient, wrist_strategy = resolve_grasp_orientation(
-                    params or {},
-                    wrist_det,
-                    self,
-                    yaw_override_rad=np.deg2rad(yaw_deg),
-                    context="wrist-refine",
-                )
-                if wrist_strategy == "obb":
-                    orient = wrist_orient
-                    self._active_grasp_strategy = wrist_strategy
-                    logger.info(
-                        "Wrist grasp: img=%.1f deg -> yaw=%.1f deg (ar=%.1f)",
-                        img_deg,
-                        yaw_deg,
-                        refined["aspect_ratio"],
-                    )
 
         # Persist the (possibly OBB-yawed) orientation so the grasp primitive's
         # descent/clamp/lift reuse it instead of reverting to GRASP_ORIENTATION

@@ -33,12 +33,15 @@ jaws), so each of these is a precondition, not an assumption:
 
 import json
 import logging
+import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
 import cv2
+from PIL import Image
 
 from spark_core.util import as_bool
 from spark_real.control import execution_recovery
@@ -157,6 +160,43 @@ class VerifyMixin(ReplayMixin):
         logger.info("[spatial-verify] folded into verify: status=%s", outcome.status)
         return outcome
 
+    def _fold_in_llm_rung(self, outcome, score):
+        """Last rung: when geometry has no verdict, ask the planner LLM to look.
+
+        It can only turn "unverified" into a pass. A "no" stays unverified with the reason noted,
+        because a verify FAIL can replay motion and a model's opinion should not move the arm.
+        SPARK_VERIFY_LLM=0 turns this off.
+        """
+        planner = getattr(getattr(self, "_pipeline", None), "_planner", None)
+        if outcome.status != UNVERIFIED or planner is None or os.environ.get("SPARK_VERIFY_LLM") == "0":
+            return outcome
+        try:
+            captures = self._pipeline.capture()
+            # The operator's words: a planner's rewording can add requirements nobody asked for.
+            task = getattr(self, "_task_instruction", None) or (score or {}).get("task")
+            contents = [
+                f"A robot arm was asked to: {task!r}. The arm has "
+                "moved clear. Looking only at these camera images, did the task succeed? Reply "
+                'with JSON only: {"success": true or false, "reason": "one sentence"}.'
+            ]
+            for cam in ("birdview", "sideview"):
+                rgb = (captures.get(cam) or {}).get("rgb")
+                if rgb is not None:
+                    contents += [f"Camera '{cam}':", Image.fromarray(rgb)]
+            if len(contents) == 1:
+                return outcome
+            reply = planner.generate(contents, tag="verify", json_only=True)
+            verdict = json.loads(re.search(r"\{.*\}", reply, re.S).group())
+        except Exception as exc:  # noqa: BLE001 - never let the rung crash verify
+            logger.warning("[llm-verify] rung failed: %s", exc)
+            return outcome
+        said = "pass" if verdict.get("success") is True else "no"
+        logger.info("[llm-verify] %s: %s", said, verdict.get("reason"))
+        outcome.reason = f"{outcome.reason}; llm rung ({said}): {verdict.get('reason')}"
+        if said == "pass":
+            outcome.status = PASS
+        return outcome
+
     def _fold_in_release_proprio(self, outcome):
         """Rung 0: the arm's own release-time evidence, folded into the
         camera verdict. Proprioception here only ever removes a pass, never
@@ -207,6 +247,7 @@ class VerifyMixin(ReplayMixin):
         outcome = self._verify_task_completion(score, actions)
         outcome = self._fold_in_release_proprio(outcome)
         outcome = self._fold_in_spatial_rung(outcome, score)
+        outcome = self._fold_in_llm_rung(outcome, score)
 
         if outcome.status == PASS:
             return

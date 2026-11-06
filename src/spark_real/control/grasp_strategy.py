@@ -364,7 +364,7 @@ def place_aware_yaw(executor, yaw, context):
 
     A parallel gripper closes identically at both, but the choice fixes which
     way the held object points and hence the wrist angle the place will need
-    (a bad branch can push the place past the +-100 deg wrist limit and seat
+    (a bad branch can push the place past the wrist limit and seat
     the object end-for-end).
 
     Returns the chosen yaw, or the input unchanged whenever the preview

@@ -184,11 +184,38 @@ class WristRefineMixin:
                 logger.info("Wrist refine: '%s' not found", label)
                 return None
 
-            best_idx = int(scores.argmax())
-            mask = masks[best_idx].cpu().numpy().squeeze()
-            ys, xs = np.where(mask > 0)
-            if len(xs) < 20:
+            # The instance nearest the binding, not the best-scored one: two spoons
+            # may be in view. Masks far below the top score are noise, not candidates.
+            floor = float(scores.max()) * self.WRIST_MIN_RELATIVE_SCORE
+            best = None
+            for m, score in zip(masks, scores):
+                mask = m.cpu().numpy().squeeze()
+                ys, xs = np.where(mask > 0)
+                if float(score) < floor or len(xs) < 20:
+                    continue
+                cx_det, cy_det = float(xs.mean()), float(ys.mean())
+                if mode == "depth":
+                    pos, detail = self._wrist_pos_from_depth(
+                        rs_cal, depth, mask, cx_det, cy_det, label
+                    )
+                else:
+                    pos, detail = self._wrist_pos_from_ray(
+                        rs_cal,
+                        cx_det,
+                        cy_det,
+                        coarse_target,
+                        z_plane,
+                        label,
+                        tcp_z=float(tcp_pose[2]),
+                    )
+                if pos is None:
+                    continue
+                dist = float(np.linalg.norm(np.asarray(pos)[:2] - np.asarray(coarse_target)[:2]))
+                if best is None or dist < best[0]:
+                    best = (dist, mask, pos, detail)
+            if best is None:
                 return None
+            _, mask, pos_world, detail = best
 
             contours, _ = cv2.findContours(
                 mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
@@ -208,25 +235,6 @@ class WristRefineMixin:
                     if short > 0:
                         aspect_ratio = float(long / short)
                     wrist_angle = float(np.arctan2(major[1], major[0]))
-
-            cx_det = float(xs.mean())
-            cy_det = float(ys.mean())
-            if mode == "depth":
-                pos_world, detail = self._wrist_pos_from_depth(
-                    rs_cal, depth, mask, cx_det, cy_det, label
-                )
-            else:
-                pos_world, detail = self._wrist_pos_from_ray(
-                    rs_cal,
-                    cx_det,
-                    cy_det,
-                    coarse_target,
-                    z_plane,
-                    label,
-                    tcp_z=float(tcp_pose[2]),
-                )
-            if pos_world is None:
-                return None
 
             logger.info(
                 "Wrist refine '%s' [%s]: img_angle=%.1f deg, ar=%.1f, %s, "

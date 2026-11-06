@@ -45,6 +45,8 @@ logger = logging.getLogger(__name__)
 _REST = np.array([1.5708, -1.5708, 1.5708, -1.5708, -1.5708, 0.0], dtype=np.float32)
 
 _ROBOT_DESC = "ur10e_description"
+_MAX_POS_ERR_M = 0.05
+_MAX_ORI_ERR_RAD = np.deg2rad(2.0)
 _TCP_LINK = "tool0"
 
 _robot = None
@@ -95,7 +97,8 @@ def _build():
             verbose=False,
         )
         qf = sol[jv]
-        return qf, jaxlie.SE3(_robot.forward_kinematics(qf)[_tli]).translation()
+        T = jaxlie.SE3(_robot.forward_kinematics(qf)[_tli])
+        return qf, T.translation(), T.rotation().as_matrix()
 
     _solver = jax.jit(_solve)
 
@@ -128,7 +131,7 @@ def solve_ik(
         q_seed: current joint config (>=6 used); seeds the solve + tie-break.
 
     Returns:
-        (6,) joint positions, or None on failure / >5cm residual.
+        (6,) joint positions, or None on failure / >5cm or >2deg residual.
     """
     global _last_q
     _load()
@@ -145,14 +148,14 @@ def solve_ik(
 
     sd = _seed(q_seed)
 
-    def _one(R):
+    def _one(R, seed):
         qx = Rotation.from_matrix(R).as_quat()  # xyzw
         qw = np.array([qx[3], qx[0], qx[1], qx[2]], dtype=np.float32)  # wxyz
         try:
-            qj, ap = _solver(
+            qj, ap, aR = _solver(
                 jnp.asarray(target_pos, jnp.float32),
                 jnp.asarray(qw, jnp.float32),
-                jnp.asarray(sd, jnp.float32),
+                jnp.asarray(seed, jnp.float32),
                 jnp.float32(pos_weight),
                 jnp.float32(ori_weight),
                 jnp.float32(rest_weight),
@@ -160,29 +163,38 @@ def solve_ik(
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("[ur pyroki IK] solve raised: %s", exc)
-            return None, None
+            return None, None, None
         # numpy conversion OUTSIDE the jit (asarray inside traces->error).
-        return np.asarray(qj, dtype=float).ravel(), np.asarray(ap, dtype=float)
+        return (
+            np.asarray(qj, dtype=float).ravel(),
+            np.asarray(ap, dtype=float),
+            np.asarray(aR, dtype=float),
+        )
 
-    # Parallel-jaw yaw symmetry: try the requested wrist yaw and yaw+pi.
-    Ra = Rt @ Rotation.from_euler("z", np.pi).as_matrix()
+    # The commanded yaw is the yaw. Solving yaw+pi here to save wrist travel seated held
+    # objects end-for-end and moved the tip by twice the TCP's XY offset; callers that may use
+    # the two-jaw symmetry choose the branch themselves (grasp_strategy.symmetric_yaw).
+    # Seeds: the current wrist, then wrist-3 turned by +-90: LM stalls on a long yaw otherwise.
     cands = []
-    for R in (Rt, Ra):
-        q, ap = _one(R)
+    for turn in (0.0, np.pi / 2, -np.pi / 2):
+        q, ap, aR = _one(Rt, sd + np.array([0, 0, 0, 0, 0, turn], dtype=np.float32))
         if q is None or q.size < 6:
             continue
         err = float(np.linalg.norm(ap - target_pos))
-        dq = float(np.max(np.abs(q[:6] - _seed(q_seed)[:6])))
-        cands.append((q, ap, dq, err))
-
-    cands = [c for c in cands if c[3] <= 0.05]
+        ori = float(Rotation.from_matrix(aR.T @ Rt).magnitude())
+        if err <= _MAX_POS_ERR_M and ori <= _MAX_ORI_ERR_RAD:
+            cands.append((q, ap, float(np.max(np.abs(q[:6] - sd[:6]))), err))
     if not cands:
-        logger.warning("[ur pyroki IK] no candidate within 5cm")
+        logger.warning("[ur pyroki IK] no candidate reached the pose")
         return None
     cands.sort(key=lambda c: c[2])  # smallest joint swing
     qb, ab, dqb, eb = cands[0]
 
     qb = np.asarray(qb, dtype=float).copy()
+    # Wrist-3 is 2pi-periodic and limit_cost is soft, so ties near a half turn walk it toward
+    # its +-2pi stop. Unwind only past 4 rad: a wrap at +-pi spins a full turn on a 1 cm move.
+    if abs(qb[5]) > 4.0:
+        qb[5] = (qb[5] + np.pi) % (2 * np.pi) - np.pi
     logger.info("[ur pyroki IK] solved dq=%.2f pos_err=%.4fm", dqb, eb)
     _last_q = np.asarray(qb, dtype=np.float32).copy()
     return qb[:6]

@@ -69,6 +69,8 @@ def make_robot_driver(
 
         freq = 500.0 if frequency is None else float(frequency)
         arm = UR10eDriver(robot_ip, freq, gripper_script=gripper.get("script"))
+        if robot.get("home_config") is not None:
+            arm.HOME_CONFIG = [float(v) for v in robot["home_config"]]
         driver = mount_gripper(arm, gripper)
     elif fam == "franka":
         from spark_real.robots.franka.franka_driver import FrankaDriver

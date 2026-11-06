@@ -22,9 +22,10 @@ Pipeline (mirrors the style in ``spark_perception.py``):
   5. Order slots by major-axis projection (world XY PCA of the tray mask).
 
 Returns a list of dicts; each describes one slot in world frame.
-Falls back to N evenly-spaced poses along the tray's major axis when
-the normal-based path produces too few clusters (flat tray, no
-visible dividers, bad depth).
+Each slot also carries its floor's own long axis (axis_rad, axis_ar), so a
+tray's layout is measured rather than assumed. Falls back to N evenly-spaced
+stripes across the tray's short axis when the normal-based path produces too
+few clusters (flat tray, no visible dividers, bad depth).
 
 No SPARK server / no robot motion is touched by this module; it's a
 pure perception utility intended to be called by the executor BEFORE
@@ -41,8 +42,31 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# A slot floor this elongated has a direction; a squarer one does not.
+SLOT_AXIS_MIN_AR = 1.5
+
 
 # Internals.
+
+
+def _floor_axis(xy: np.ndarray) -> tuple:
+    """(long-axis angle in rad, aspect ratio) of a slot floor's world-XY points."""
+    vals, vecs = np.linalg.eigh(np.cov(xy.T))
+    return float(np.arctan2(vecs[1, 1], vecs[0, 1])), float(np.sqrt(vals[1] / max(vals[0], 1e-12)))
+
+
+def slot_axis_consensus(slots) -> Optional[float]:
+    """Pixel-weighted direction (mod pi) of the elongated slot floors, or None.
+
+    None when no floor has a direction, or when they disagree (a tray with
+    perpendicular compartments has no single direction; ask per slot instead).
+    """
+    floors = [s for s in slots if s.get("axis_ar", 0.0) >= SLOT_AXIS_MIN_AR]
+    total = sum(s["n_pixels"] for s in floors)
+    if not total:
+        return None
+    v = sum(s["n_pixels"] * np.exp(2j * s["axis_rad"]) for s in floors)
+    return float(np.angle(v)) / 2.0 if abs(v) >= 0.5 * total else None
 
 
 def _compute_normals_from_depth(
@@ -204,26 +228,25 @@ def _fallback_axis_slots(
     lift_offset_m: float,
 ) -> List[dict]:
     """
-    N evenly-spaced poses along the tray's major axis.
+    N evenly-spaced poses across the tray's short axis.
 
-    Used when the normal-based detector finds <2 reliable components.
-    Slots are spaced so that the OUTERMOST slot centers sit at
-    approximately +/-0.5*(major_len - slot_len/N) so the executor's
-    release pose is comfortably inside the tray footprint, not on the
-    rim.
+    Used when the normal-based detector finds <2 reliable components, so the
+    layout is unknown: this assumes slots along the long side, the same default
+    as resolve_slot_direction. Outermost centers are inset by half a stripe so
+    the release pose stays inside the tray footprint, not on the rim.
     """
     if n_slots < 1:
         n_slots = 1
     mean_xy = tray_axes["mean_xy"]
-    major = tray_axes["major"]
-    L = tray_axes["major_len_m"]
+    minor = tray_axes["minor"]
+    L = tray_axes["minor_len_m"]
     # Inset by one half-slot from each end so centers don't sit on rims.
     slot_len = L / max(n_slots, 1)
     starts = -L / 2 + slot_len / 2 + slot_len * np.arange(n_slots)
     z = tray_axes["z_med"] + lift_offset_m
     slots = []
     for i, s in enumerate(starts):
-        xy = mean_xy + s * major
+        xy = mean_xy + s * minor
         slots.append(
             {
                 "slot_idx": int(i),
@@ -266,8 +289,8 @@ def detect_slots(
             robot base frame.
         depth_scale: per-camera depth bias correction (see SPARK
             ``depth_scale_correction`` in the handeye JSON).
-        n_fallback_slots: number of evenly-spaced slots to emit along
-            the tray's major axis when the normal-based detector
+        n_fallback_slots: number of evenly-spaced slots to emit across
+            the tray's short axis when the normal-based detector
             can't find >=2 components. Caller should pass the actual
             object count when known so the fallback matches.
         min_slot_area_px: minimum connected-component area for a
@@ -280,12 +303,13 @@ def detect_slots(
             (default 0.9 ~ within 26 deg of world +Z).
 
     Returns:
-        List of dicts sorted by major-axis projection. Each dict:
-            slot_idx: int          (0 is the "low" end along major axis)
+        List of dicts ordered side by side, across the slots. Each dict:
+            slot_idx: int
             world_xyz: np.ndarray  shape (3,) float64
             n_pixels: int          number of slot-floor pixels in component
             confidence: float      0..1
             mode: str              "normals" or "fallback"
+            axis_rad, axis_ar: float  the floor's long axis ("normals" only)
 
     On total perception failure (no tray axes computable) returns an
     empty list; the caller should treat this the same as "no slots".
@@ -428,11 +452,14 @@ def detect_slots(
         cx_w = float(np.median(comp_world[:, 0]))
         cy_w = float(np.median(comp_world[:, 1]))
         cz_w = float(np.median(comp_world[:, 2]))
+        axis_rad, axis_ar = _floor_axis(comp_world[:, :2])
         slot_components.append(
             {
                 "world_xy": np.array([cx_w, cy_w]),
                 "world_z_floor": cz_w,
                 "n_pixels": int(comp_pix_in_floor.sum()),
+                "axis_rad": axis_rad,
+                "axis_ar": axis_ar,
             }
         )
 
@@ -445,11 +472,17 @@ def detect_slots(
         )
         return _fallback_axis_slots(tray_axes, n_fallback_slots, lift_offset_m)
 
-    # step 5: order slots along the tray's major axis
+    # step 5: order slots side by side, across their own direction. A tray
+    # whose slots run along its long side has no spread along that axis.
     mean_xy = tray_axes["mean_xy"]
-    major = tray_axes["major"]
+    axis = slot_axis_consensus(slot_components)
+    across = (
+        tray_axes["major"]
+        if axis is None
+        else np.array([-np.sin(axis), np.cos(axis)])
+    )
     for sc in slot_components:
-        sc["proj"] = float((sc["world_xy"] - mean_xy) @ major)
+        sc["proj"] = float((sc["world_xy"] - mean_xy) @ across)
     slot_components.sort(key=lambda s: s["proj"])
 
     # step 6: build the output list
@@ -470,6 +503,8 @@ def detect_slots(
                 "n_pixels": int(sc["n_pixels"]),
                 "confidence": conf,
                 "mode": "normals",
+                "axis_rad": sc["axis_rad"],
+                "axis_ar": sc["axis_ar"],
             }
         )
     return out

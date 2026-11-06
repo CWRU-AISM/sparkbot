@@ -23,7 +23,7 @@ The pin map and the cache toggle live in ``<library>/runtime_state.json``,
 so they survive a server restart. The previous in-process globals silently
 reverted to the ``SPARK_DISABLE_LLM`` env default on every bounce, which
 mid-collection meant a run the operator believed was offline quietly
-called Gemini.
+called the LLM.
 """
 
 from __future__ import annotations

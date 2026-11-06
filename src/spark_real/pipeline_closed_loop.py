@@ -222,7 +222,7 @@ class ClosedLoopMixin:
                     success = True
                     verify_status = "pass"
                     logger.warning(
-                        "[llm-last-resort] Gemini adjudicated COMPLETE "
+                        "[llm-last-resort] LLM adjudicated COMPLETE "
                         "(conf %.2f): %s -- overriding verify=%s, no replan",
                         judged["confidence"], judged["reason"], why,
                     )

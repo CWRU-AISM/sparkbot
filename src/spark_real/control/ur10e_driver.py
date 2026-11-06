@@ -97,7 +97,7 @@ class UR10eDriver(URConnectionMixin, URMotionMixin, RobotiqMixin):
     # Common configurations
     # Home: TCP xyz=(-0.8144, 0.1089, 0.1304) rot=(-2.2836, -2.1399, 0.0231).
     # A home 170 deg off at wrist 3 rolls the wrist camera a half turn.
-    HOME_CONFIG = [3.2551, -1.7610, -1.9082, 5.2296, 1.5712, -2.8697]
+    HOME_CONFIG = [3.2070, -1.8788, -1.7903, 5.2496, 1.5762, 0.0916]
 
     def __init__(
         self,

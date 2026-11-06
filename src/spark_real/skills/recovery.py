@@ -72,7 +72,7 @@ def grasp_perturb(executor, params: dict):
     floor = executor.TABLE_Z_FLOOR + 0.002
     if target[2] < floor:
         target[2] = floor
-    executor._move_to(target, executor.GRASP_ORIENTATION, velocity=executor.velocity * 0.2)
+    executor._move_to(target, executor.current_orientation(), velocity=executor.velocity * 0.2)
     executor._abort_sleep(0.2)
 
     # Re-close and force-verify (gripper position/OBJ registers read stale on the
@@ -150,7 +150,8 @@ def search_keypoint(executor, params: dict):
         waypoint = origin.copy()
         waypoint[2] = clear_z
         try:
-            executor._move_to(waypoint, executor.GRASP_ORIENTATION)
+            # A lift is a translation: keep the wrist where it is.
+            executor._move_to(waypoint, executor.current_orientation(executor.GRASP_ORIENTATION))
         except Exception as exc:  # noqa: BLE001
             logger.warning("[search_keypoint] un-occlude move failed: %s", exc)
         # _redetect_for_recovery returns a fresh world position or None, and
@@ -282,7 +283,7 @@ def retract_retry(executor, params: dict):
         ceiling = float(getattr(executor, "SAFE_HEIGHT_Z", 0.35))
         retract_pos[2] = min(float(current[2]) + retract_dist, ceiling)
         if retract_pos[2] > float(current[2]) + 1e-4:
-            executor._move_to(retract_pos, executor.GRASP_ORIENTATION)
+            executor._move_to(retract_pos, executor.current_orientation())
         else:
             logger.info(
                 "retract_retry: already at/above the %.2f m ceiling (z=%.3f); "
@@ -296,7 +297,7 @@ def retract_retry(executor, params: dict):
         offset_pos = retract_pos.copy()
         offset_pos[0] += dx
         offset_pos[1] += dy
-        executor._move_to(offset_pos, executor.GRASP_ORIENTATION)
+        executor._move_to(offset_pos, executor.current_orientation())
 
         logger.info(
             "retract_retry attempt %d/%d: offset (%.3f, %.3f)",

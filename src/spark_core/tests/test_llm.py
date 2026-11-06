@@ -114,3 +114,38 @@ def test_json_only_off_and_str_contents(monkeypatch):
     SPARKPlanner().generate("hello", tag="t2")
     parts = _FakeOpenAI.calls[1]["create"]["messages"][0]["content"]
     assert parts == [{"type": "text", "text": "hello"}]
+
+
+def test_generate_anthropic(monkeypatch):
+    calls = []
+
+    class FakeAnthropic:
+        def __init__(self, **kwargs):
+            def create(**kw):
+                calls.append(kw)
+                return types.SimpleNamespace(
+                    stop_reason="end_turn",
+                    content=[types.SimpleNamespace(type="thinking"), types.SimpleNamespace(type="text", text='["cup"]')],
+                    usage=types.SimpleNamespace(input_tokens=11, output_tokens=7, cache_read_input_tokens=2),
+                )
+            self.beta = types.SimpleNamespace(messages=types.SimpleNamespace(create=create))
+
+    monkeypatch.setenv("SPARK_LLM_BACKEND", "anthropic")
+    monkeypatch.delenv("SPARK_LLM_MODEL", raising=False)
+    monkeypatch.delenv("SPARK_GEMINI_MODEL", raising=False)
+    monkeypatch.setattr(llm, "_Anthropic", FakeAnthropic)
+    planner = SPARKPlanner()
+    out = planner.generate(["find the cup", np.zeros((8, 8, 3), np.uint8)], tag="t1", temperature=0,
+                           model="gemini-3.5-flash", json_only=True)
+    assert out == '["cup"]'
+    req = calls[0]
+    assert req["model"] == "claude-opus-5-5" and "temperature" not in req
+    text, image, instruction = req["messages"][0]["content"]
+    assert text["text"] == "find the cup" and image["source"]["media_type"] == "image/jpeg"
+    assert "JSON" in instruction["text"]
+    assert planner.usage_log[-1]["prompt_tokens"] == 11 and planner.usage_log[-1]["cached_tokens"] == 2
+
+    monkeypatch.setenv("SPARK_LLM_MODEL", "claude-haiku-5-5")
+    assert SPARKPlanner()._get_client() and calls  # a model outside the fallback list sends no fallbacks
+    SPARKPlanner().generate("hi", tag="t2")
+    assert "fallbacks" not in calls[-1]

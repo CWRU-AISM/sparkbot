@@ -176,6 +176,19 @@ def _singular(word: str) -> str:
     return w[:-1]
 
 
+def count_differs(query: str, texts) -> bool:
+    """True when `query` says "spoons" where every one of `texts` says "spoon".
+
+    The near-exact tiers fold plurals, but a one-spoon contract or tree must not serve a
+    request for several.
+    """
+    words = {w for t in texts for w in _norm(t).split()}
+    return any(
+        w not in words and _singular(w) != w and _singular(w) in words
+        for w in _norm(query).split()
+    )
+
+
 def _canon_word(word: str) -> str:
     """
     Fold one token to its canonical spelling: regional variants first, then

@@ -148,6 +148,26 @@ def _trimmed_span(proj: np.ndarray) -> float:
     return float((hi - lo) / _TRIM_COVERAGE)
 
 
+def _grow_top_surface(pts, sel, band, iters=3, max_slope=0.27):
+    """Grow a top band along its own best-fit plane; return (selection, height above that plane).
+
+    A flat cut at max(z) - band keeps only the high side of a surface that is tilted by a degree or two
+    (a table or hand-eye error, a utensil resting on its bowl), which skews the footprint's axis and aspect
+    ratio. max_slope (15 deg) stops a fit on a few pixels from swallowing a side face.
+    """
+    xy = pts[:, :2] - pts[:, :2].mean(axis=0)
+    height = pts[:, 2]
+    for _ in range(iters):
+        if int(sel.sum()) < 3:
+            break
+        A = np.column_stack([xy[sel], np.ones(int(sel.sum()))])
+        slope = np.clip(np.linalg.lstsq(A, pts[sel, 2], rcond=None)[0][:2], -max_slope, max_slope)
+        height = pts[:, 2] - xy @ slope
+        height = height - height[sel].mean()
+        sel = height >= -band
+    return sel, height
+
+
 def _world_xy_pca_obb(
     mask,
     depth,
@@ -211,6 +231,10 @@ def _world_xy_pca_obb(
     top_band = float(os.environ.get("SPARK_OBB_TOP_BAND_M", "0.008"))
     full_xy = pts_world[:, :2]
     _sel = z_all >= (float(z_all.max()) - top_band)
+    z_top = z_all
+    # Off by default so the LIBERO-PRO protocol stays byte-identical; spark_real turns it on.
+    if os.environ.get("SPARK_OBB_TILT_FIT") == "1":
+        _sel, z_top = _grow_top_surface(pts_world, _sel, top_band)
     band_ok = int(_sel.sum()) >= min_pixels
     if band_ok:
         band_xy = pts_world[_sel, :2]
@@ -252,7 +276,7 @@ def _world_xy_pca_obb(
     #   axis definition - PCA on a near-circular footprint returns an ARBITRARY
     #                    major axis (eigenvalues tie), so a round dome must
     #                    score low however clean its depth is.
-    band_z = pts_world[_sel, 2] if band_ok else z_all
+    band_z = z_top[_sel] if band_ok else z_all
     z_std = float(np.std(band_z))
     n_band = int(_sel.sum()) if band_ok else int(len(z_all))
     band_q = float(

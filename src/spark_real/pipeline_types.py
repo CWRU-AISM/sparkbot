@@ -55,7 +55,6 @@ class PipelineConfig:
     sam3_threshold: float = 0.03
     use_hardware_depth: bool = True
 
-    gemini_model: str = "gemini-3.5-flash"
     planner_temperature: float = 0.3
 
     velocity: float = 0.25

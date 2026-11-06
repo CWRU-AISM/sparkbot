@@ -260,7 +260,7 @@ class ReleaseMixin(ReleaseDipMixin):
                 )
             except Exception as e:
                 logger.warning(
-                    "Could not read TCP for pitch sign: %s, using Gemini hint", e
+                    "Could not read TCP for pitch sign: %s, using the planner hint", e
                 )
                 pitch_sign = gemini_pitch
 

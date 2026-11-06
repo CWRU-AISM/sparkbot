@@ -1,7 +1,7 @@
 """
 SPARK Real Pipeline - End-to-end orchestrator for physical robot deployment.
 
-Coordinates: Camera capture -> SAM3 perception -> Gemini planning -> robot execution.
+Coordinates: Camera capture -> SAM3 perception -> LLM planning -> robot execution.
 """
 
 import logging
@@ -274,16 +274,14 @@ class SPARKRealPipeline(
         self._perception.load_models(load_da3=not self.config.use_hardware_depth)
         logger.info("SAM3 perception ready")
 
-        logger.info("Initializing Gemini planner...")
+        # Backend and model come from SPARK_LLM_BACKEND and SPARK_LLM_MODEL (spark_core.llm).
         self._planner = SPARKPlanner(
-            llm_backend="gemini",
-            model=self.config.gemini_model,
             robot_family=self.config.robot_family,
             temperature=self.config.planner_temperature,
         )
         logger.info(
             "Planner ready (model=%s, family=%s)",
-            self.config.gemini_model,
+            self._planner.model,
             self.config.robot_family,
         )
 

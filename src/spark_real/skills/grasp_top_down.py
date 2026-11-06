@@ -174,7 +174,7 @@ def grasp_top_down(
             executor.robot.open_gripper()
             cur = np.array(executor.robot.get_tcp_pose()[:3])
             cur[2] = min(cur[2] + 0.08, 0.50)
-            executor._move_to(cur.tolist(), executor.GRASP_ORIENTATION)
+            executor._move_to(cur.tolist(), executor.current_orientation())
         except Exception:
             pass
 

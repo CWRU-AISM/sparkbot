@@ -59,6 +59,7 @@ class MotionMixin(
 
     WRIST_REFINE_MODES = ("off", "depth", "ray_plane")
     WRIST_REFINE_MODE_DEFAULT = "ray_plane"
+    WRIST_MIN_RELATIVE_SCORE = 0.5
     # A plane prior nearer the camera than this is rejected: the ray grazes
     # the plane and the intersection runs away laterally.
     WRIST_RAY_MIN_STANDOFF_M = 0.03

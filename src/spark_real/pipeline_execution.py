@@ -43,7 +43,7 @@ class ExecutionMixin(PlanMixin):
         # last run would be read as this run's success.
         success_verifier.reset_run_state(self._executor)
 
-        # Apply Gemini label corrections to detections before building map.
+        # Apply planner label corrections to detections before building map.
         #
         # This pop is why a cached score must be hashed AFTER execution:
         # label_corrections is per-run bookkeeping that RENAMES live
@@ -53,7 +53,7 @@ class ExecutionMixin(PlanMixin):
         # the stored hash agree.
         corrections = score.pop("label_corrections", None) or {}
         if corrections:
-            logger.info("Applying %d label correction(s) from Gemini:", len(corrections))
+            logger.info("Applying %d label correction(s) from the planner:", len(corrections))
             correction_map = {str(k): str(v) for k, v in corrections.items()}
             for det in detections:
                 if det.label in correction_map:

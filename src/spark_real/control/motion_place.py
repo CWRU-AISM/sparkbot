@@ -176,10 +176,7 @@ class PlaceMixin:
         # its grasp-symmetric 180 twin, a free yaw may be picked outright.
         yaw_aligned = False
         # Slotted-container safety net for a generic place (move_to_keypoint
-        # + release). For a slotted tray the raw container OBB major axis is
-        # PERPENDICULAR to the slots (world-PCA axis-swap on a near-square
-        # tray), so derive the slot direction the SAME way place_in_slot does
-        # and align to that instead of the raw OBB.
+        # + release): derive the slot direction the SAME way place_in_slot does.
         slots = target_detection.get("slots") if target_detection else None
         if slots:
             slot_dir, slot_src = resolve_slot_direction(target_detection, target_label)
@@ -307,7 +304,7 @@ class PlaceMixin:
             for pos_i, ori_i, _v, _lbl in lead or []:
                 self._move_to(pos_i, ori_i)
 
-        self._move_to(lift, self.GRASP_ORIENTATION)
+        self._move_to(lift, self.current_orientation())
 
         # Per-waypoint drop detection at EACH stationary transport arrival
         # (lift, then above-target). On a confirmed drop, clear _holding and

@@ -70,6 +70,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
+from spark_real.bt_keys import count_differs
 from spark_real.bt_library import (
     _jaccard,
     _tokens,
@@ -155,7 +156,11 @@ class Registry:
         want = near_exact_key(task)
         if not want:
             return None
-        hits = [spec for spec in self.specs if want in spec.near_keys]
+        hits = [
+            spec
+            for spec in self.specs
+            if want in spec.near_keys and not count_differs(task, (spec.task, *spec.aliases))
+        ]
         if len(hits) == 1:
             return hits[0]
         if len(hits) > 1:
@@ -199,6 +204,11 @@ class Registry:
         if near is not None:
             logger.info("prompt registry: near-exact hit %r for %r", near.task, instruction)
             return near
+        key = near_exact_key(instruction)
+        if key and any(key in spec.near_keys for spec in self.specs):
+            # Same task, different count. The similarity tier would answer with some other tool.
+            logger.info("prompt registry: no contract for the count in %r", instruction)
+            return None
 
         query = _tokens(instruction)
         if not query:
@@ -206,6 +216,8 @@ class Registry:
         scored: List[Tuple[float, TaskSpec]] = []
         for spec in self.specs:
             candidates = [spec.task] + list(spec.aliases)
+            if count_differs(instruction, candidates):
+                continue
             best = max(_jaccard(query, _tokens(c)) for c in candidates)
             if best >= self.min_similarity:
                 scored.append((best, spec))

@@ -3,7 +3,7 @@ Version-controlled BT seeds -> BTLibrary.
 
 Seeds are one YAML file per task under ``configs/bt_seeds/``, shipped with
 the repo and loaded into the library at boot (idempotent: ``add()`` de-dups
-on the content hash), so a fresh checkout serves its tasks without a Gemini
+on the content hash), so a fresh checkout serves its tasks without an LLM
 call.
 
 File schema (all keys optional except ``instruction`` and ``score``)::

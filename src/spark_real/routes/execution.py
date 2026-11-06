@@ -138,6 +138,12 @@ async def execute_approved(req: ExecuteRequest):
                 )
                 captures = {}
 
+        # run_task enriches its detections; this path must too, or place_in_slot has no slots.
+        try:
+            pipeline._enrich_with_slots(detections, captures)
+        except Exception as exc:  # noqa: BLE001 - a place still works from the tray outline
+            logger.warning("execute_approved: slot detection failed: %s", exc)
+
         # This endpoint bypasses run_task, and a dry run never reaches
         # execute() either -- without this the verdict read below is the
         # PREVIOUS run's, so a dry run that moved nothing reports its pass.
@@ -378,7 +384,7 @@ async def run_bt_yaml(body: dict):
 @router.post("/api/plan")
 def generate_plan(req: PlanRequest):
     # Sync (def) handler: FastAPI runs it in the anyio threadpool. The body
-    # does capture + SAM3 + Gemini inline -- seconds to minutes of blocking
+    # does capture + SAM3 + LLM inline -- seconds to minutes of blocking
     # work that would freeze the event loop (and with it /api/stop and the
     # camera stream) for the whole call.
     pipeline = state.pipeline
@@ -398,7 +404,7 @@ def generate_plan(req: PlanRequest):
     #   2. the task's frozen contract in configs/tasks/*.yaml -- pinned
     #      vocabulary, declared object counts, deterministic instance
     #      ordering, no LLM
-    #   3. Gemini vision prompt-gen (temperature 0.3, so the vocabulary itself
+    #   3. LLM vision prompt-gen (temperature 0.3, so the vocabulary itself
     #      drifts run to run -- fine for a preview, not for collection)
     #   4. the regex extractor
     # Same source as detect_approve, so a plan preview detects with the same

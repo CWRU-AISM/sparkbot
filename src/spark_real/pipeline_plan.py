@@ -12,9 +12,35 @@ from spark_real.plan_inputs import (
     _bt_frozen,
     verify_block_labels,
 )
+from spark_real.planning import tool_ends
 from spark_real.routes import state as _routes_state
 
 logger = logging.getLogger(__name__)
+
+
+def _walk_tree(node):
+    if isinstance(node, dict):
+        yield node
+        for child in node.get("children") or []:
+            yield from _walk_tree(child)
+
+
+def _places_in_slot(score) -> bool:
+    return any(n.get("type") == "place_in_slot" for n in _walk_tree((score or {}).get("tree")))
+
+
+def _drop_scene_yaw(score):
+    """A cached tree must not replay a grasp angle read from an earlier scene."""
+    for node in _walk_tree((score or {}).get("tree")):
+        params = node.get("params")
+        if (
+            isinstance(params, dict)
+            and node.get("type") in ("move_to_keypoint", "grasp")
+            and params.get("grasp_strategy") == "obb"
+            and params.pop("grasp_yaw_deg", None) is not None
+        ):
+            logger.info("[plan] cached tree: dropped a stale grasp yaw on %s", params.get("keypoint_label", "grasp"))
+    return score
 
 
 class PlanMixin:
@@ -57,7 +83,7 @@ class PlanMixin:
 
         Returns a ``BTMatch`` or None. Raises ``BTCacheMiss`` on a miss when
         strict cache-only mode is active, so a demo-collection run fails
-        loudly instead of quietly minting a fresh Gemini plan nobody froze.
+        loudly instead of quietly minting a fresh LLM plan nobody froze.
 
         Shared by ``plan()`` and by the detection-prompt harvest in
         ``run_task``, so both see exactly the same tree.
@@ -133,6 +159,19 @@ class PlanMixin:
         caller can record the run's provenance and bump the right entry
         without re-resolving.
         """
+        executor = getattr(self, "_executor", None)
+        if executor is not None:
+            executor._task_instruction = instruction
+            executor._tool_heads = {}
+        ends, marked = {}, set()
+        if scene_image is not None:
+            try:
+                ends = tool_ends.measure(detections, self.capture())
+                scene_image, marked = tool_ends.draw(scene_image, ends, scene_camera)
+            except Exception as exc:  # noqa: BLE001 - direction is polish, never stop a plan
+                logger.warning("[tool-ends] could not mark tool ends: %s", exc)
+                ends, marked = {}, set()
+        ends = {k: v for k, v in ends.items() if k in marked}
         self._last_plan_source = None
         self._last_bt_hash = None
 
@@ -147,7 +186,15 @@ class PlanMixin:
                 self._last_bt_hash = match.hash
                 # Detached copy: execute() pops label_corrections off the
                 # score, which would otherwise mutate the library entry.
-                return match.score
+                score = _drop_scene_yaw(match.score)
+                if ends and self._planner is not None and _places_in_slot(score):
+                    try:
+                        answer = tool_ends.ask(self._planner, scene_image, ends)
+                        if executor is not None:
+                            executor._tool_heads = tool_ends.headings(ends, answer)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("[tool-ends] no answer for a cached plan: %s", exc)
+                return score
         elif self.plan_mode() == "cache_only":
             raise BTCacheMiss(
                 f"plan_mode=cache_only forbids the LLM, but planning "
@@ -200,8 +247,9 @@ class PlanMixin:
             _old_temp = self._planner.temperature
             self._planner.temperature = float(temperature)
         try:
+            asked = instruction + (tool_ends.NOTE if ends else "")
             score = self._planner.generate_score(
-                instruction=instruction,
+                instruction=asked,
                 annotated_image=scene_image,
                 scene_camera=scene_camera,
                 keypoint_labels=labels,
@@ -211,7 +259,7 @@ class PlanMixin:
             score = self._validate_plan_labels(
                 score,
                 labels,
-                instruction,
+                asked,
                 scene_image,
                 detection_details,
                 _bt_examples,
@@ -220,6 +268,10 @@ class PlanMixin:
         finally:
             if _old_temp is not None:
                 self._planner.temperature = _old_temp
+        # Per-run scene knowledge: popped so it can never reach the BT library.
+        head_end = score.pop("head_end", None) if isinstance(score, dict) else None
+        if ends and executor is not None:
+            executor._tool_heads = tool_ends.headings(ends, head_end)
         return score
 
     def _validate_plan_labels(
@@ -235,7 +287,7 @@ class PlanMixin:
         """
         Refuse to return a BT that references labels nobody detected.
 
-        Gemini is told to use the exact detected labels, but when the
+        The planner is told to use the exact detected labels, but when the
         few-shot vocabulary diverges it can invent labels that only fail
         mid-run as 'not found in detections'. Collect every label the tree
         references, allow the detection labels plus label_corrections
@@ -302,7 +354,7 @@ class PlanMixin:
         bad2 = unresolved(score2)
         if bad2:
             raise ValueError(
-                f"Gemini plan references labels {sorted(bad2)} that are not "
+                f"Planner output references labels {sorted(bad2)} that are not "
                 f"in the detections {sorted(labels)} even after a corrective "
                 f"retry; refusing to execute an unresolvable plan."
             )

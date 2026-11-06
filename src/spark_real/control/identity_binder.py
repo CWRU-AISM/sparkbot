@@ -212,7 +212,10 @@ class IdentityBinder:
                 )
             return None, "not detected in this camera"
 
-        siblings = self._plan_siblings(base, plan_key)
+        # A sibling the tree also moved has no anchor left to claim a detection with.
+        siblings = [
+            s for s in self._plan_siblings(base, plan_key) if s[0] not in self._manipulated
+        ]
         if plan_key is None:
             # No anchor to check against. A label the scene has exactly one of
             # is still the only candidate there is; anything else is ambiguous.

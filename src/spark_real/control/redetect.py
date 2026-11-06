@@ -322,10 +322,13 @@ def redetect_single(executor, label):
             )
             orient = getattr(best_det, "orientation_angle", 0.0)
             ar = getattr(best_det, "aspect_ratio", 1.0)
+            # Update in place: the mask, extent and slots are still this object's. A tray's shape
+            # keeps its plan-time reading, because what it now holds distorts a new outline.
+            old = executor.detection_map.get(label) or {}
             executor.detection_map[label] = {
+                **old,
                 "position_3d": list(pos),
-                "orientation_angle": orient,
-                "aspect_ratio": ar,
+                **({} if old.get("slots") else {"orientation_angle": orient, "aspect_ratio": ar}),
             }
             if old_pos is not None:
                 logger.info(

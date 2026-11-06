@@ -313,7 +313,7 @@ def recover_grasp(executor, grasp_params, actions, action_index, skip_tier1=Fals
         current = executor._get_current_position()
         clear_pos = current.copy()
         clear_pos[2] = max(current[2] + 0.05, failed_z + 0.03)
-        executor._move_to(clear_pos, executor.GRASP_ORIENTATION)
+        executor._move_to(clear_pos, executor.current_orientation())
 
         new_target = _redetect_for_recovery(executor, target_label)
         # Guard: a recovery re-detect that lands inside the tray / container

@@ -308,7 +308,12 @@ def _judge_scoped(executor, pipeline, predicate, scope):
         plan.reason,
     )
     dets = verify_scope.detect_scoped(
-        pipeline, captures, plan.prompts, scope, capture_time=stamp
+        pipeline,
+        captures,
+        plan.prompts,
+        scope,
+        multi_instance_prompts={_base_prompt(o) for o in predicate.object_labels},
+        capture_time=stamp,
     )
     per_cam = verify_scope.per_camera(dets)
 
@@ -329,7 +334,7 @@ def _judge_scoped(executor, pipeline, predicate, scope):
         binder = IdentityBinder(
             plan_map,
             per_cam[cam],
-            manipulated=object_keys,
+            manipulated=object_keys | set(getattr(executor, "_placed_labels", ())),
             plan_anchored=anchored,
             pose_only=pose_only,
         )

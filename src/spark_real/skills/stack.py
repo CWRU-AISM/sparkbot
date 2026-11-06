@@ -282,7 +282,7 @@ def stack(executor, params: dict):
     retract = executor._get_current_position()
     retract[2] += 0.06
     executor._move_to(
-        retract, executor.GRASP_ORIENTATION, velocity=executor.velocity * 0.3
+        retract, executor.current_orientation(), velocity=executor.velocity * 0.3
     )
 
     descent_mm = (above[2] - contact_z) * 1000

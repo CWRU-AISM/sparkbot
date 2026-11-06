@@ -9,15 +9,11 @@ import numpy as np
 
 from spark_core.mask_obb import _pca_obb
 from spark_core.util import det_field
+from spark_real.perception.slot_detector import SLOT_AXIS_MIN_AR, slot_axis_consensus
 
 logger = logging.getLogger(__name__)
 
-# A near-square world-XY OBB (aspect_ratio below this) has an untrustworthy
-# major axis: PCA can swap the major/minor eigenvectors when the two spreads
-# are close, so the reported world OBB angle may actually be the SHORT axis.
-# For the 3-D cutlery tray this fired (world PCA reported ~103 deg / AR~1.3-1.8,
-# the tray's short axis mislabelled as major). Below this threshold do NOT
-# trust the world OBB major; derive slot direction from a more reliable source.
+# Below this a tray's world OBB axis is too close to square to name its long side.
 TRAY_OBB_AR_TRUST = 1.5
 
 _HEAVY_END_IMBALANCE_GATE = 0.08
@@ -174,155 +170,43 @@ def best_fit_rotation(held_mask: np.ndarray, target_mask: np.ndarray):
     return ang, best_iou, best_iou - rival
 
 
-def _pca_major_angle(points_xy):
-    """World-frame angle (rad) of the dominant-spread axis of 2D points.
+def resolve_slot_direction(det, container_label="", slot_idx=None):
+    """World angle (rad) a placed utensil must lie ALONG, and its source.
 
-    Used on detected slot CENTROIDS: parallel-compartment trays array their
-    slots along the tray's LONG axis, so the centroids' principal axis IS the
-    tray long axis. Returns None if fewer than 2 distinct points.
+    Shared by place_in_slot and the generic place path. `det` may be a dict
+    (detection_map) or an ObjectDetection.
+
+      1. This slot's own floor, when it is elongated (mixed-compartment trays).
+      2. The consensus of all measured slot floors.
+      3. No floor measured (dividers below the depth resolution): the
+         container's long axis. A tray whose slots run across its short side
+         needs the planner's grasp_yaw_deg here.
     """
-    pts = np.asarray(points_xy, dtype=float)
-    if pts.ndim != 2 or pts.shape[0] < 2:
-        return None
-    mean = pts.mean(axis=0)
-    centered = pts - mean
-    if float(np.max(np.linalg.norm(centered, axis=1))) < 1e-4:
-        return None  # all points coincident
-    cov = np.cov(centered, rowvar=False)
-    if np.asarray(cov).shape != (2, 2):
-        return None
-    eigvals, eigvecs = np.linalg.eigh(cov)
-    major = eigvecs[:, 1]  # largest eigenvalue = dominant spread
-    return float(np.arctan2(major[1], major[0]))
+    # ponytail: step 3 assumes slots along the long side; read dividers from RGB if a rig needs otherwise.
+    measured = [s for s in (det_field(det, "slots", None) or []) if s.get("mode") == "normals"]
+    for s in measured:
+        if s.get("slot_idx") == slot_idx and s.get("axis_ar", 0.0) >= SLOT_AXIS_MIN_AR:
+            return float(s["axis_rad"]), f"slot_{slot_idx}_floor(AR={s['axis_ar']:.2f})"
+    axis = slot_axis_consensus(measured)
+    if axis is not None:
+        return axis, f"slot_floors(n={len(measured)})"
 
-
-def resolve_slot_direction(det, container_label=""):
-    """World angle (rad) a placed utensil must lie ALONG for a slotted container.
-
-    Returns (slot_direction_rad, source_str). Shared by place_in_slot and the
-    generic-place path (executor_motion._transport_to) so BOTH align to the
-    slots, not the axis-swapped container OBB whose major axis is perpendicular
-    to the slots. `det` may be a dict (detection_map) or an ObjectDetection.
-
-    A parallel-compartment tray arrays its slots along the tray's LONG (major)
-    axis, and each slot (hence each utensil dropped into it) is elongated
-    PERPENDICULAR to that array, along the tray's SHORT (minor) axis. So:
-    slot_direction = tray_long_axis + 90 deg (hardware-validated on the real
-    tray).
-
-    The tray_long_axis must come from a source that CANNOT axis-swap:
-      1. Detected slot CENTROIDS (world frame, slot_detector "normals" mode):
-         their principal axis is the true array = tray long axis. Swap-immune
-         (real world positions, not the near-square tray OBB). PREFERRED.
-      2. The mask's minimum-area rectangle: a rectangle's angle is carried by
-         its outline, so no elongation gate is needed.
-      3. World OBB major axis, ONLY when aspect_ratio >= TRAY_OBB_AR_TRUST;
-         a near-square tray's world OBB may report its SHORT axis as "major".
-      4. Dense image-frame mask minAreaRect / PCA fallback (top-down birdview
-         image angle maps to world).
-      5. No reliable source: keep the tray-OBB perpendicular but WARN.
-    """
-    # 1. Slot centroids (world frame), real (normals) detections only.
-    _slots = det_field(det, "slots", None)
-    if _slots:
-        centroids = []
-        has_real = False
-        for s in _slots:
-            w = s.get("world_xyz") if hasattr(s, "get") else getattr(s, "world_xyz", None)
-            mode = s.get("mode", "") if hasattr(s, "get") else getattr(s, "mode", "")
-            if w is None:
-                continue
-            centroids.append(np.asarray(w, dtype=float)[:2])
-            if str(mode) == "normals":
-                has_real = True
-        if has_real and len(centroids) >= 2:
-            array_axis = _pca_major_angle(centroids)
-            if array_axis is not None:
-                return (
-                    array_axis + np.pi / 2.0,
-                    f"slot_centroids(n={len(centroids)})",
-                )
-
-    # 2. The mask's MINIMUM-AREA RECTANGLE. A tray is a rectangle, so its
-    # direction lives in its OUTLINE and needs no elongation gate; the
-    # mass-distribution estimators below degrade as a shape approaches square.
-    # PCA is pulled by every mask irregularity (a lip on one edge, a shadow,
-    # the utensils already in the tray): on the real tray it reported image AR
-    # 1.36 then 1.46 against a measured world extent of 0.348 x 0.217 (=1.60)
-    # and swung 25 deg between runs (-78.3 deg placed the spoon correctly,
-    # -53.1 deg laid it across its slots). minAreaRect keys off the four sides.
-    _m = det_field(det, "_mask", None)
-    if _m is None:
-        _m = det_field(det, "mask", None)
-    if _m is not None:
-        try:
-            _m8 = (np.asarray(_m) > 0).astype(np.uint8)
-            _cnts, _ = cv2.findContours(
-                _m8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            if _cnts:
-                (_cx, _cy), (_w, _h), _deg = cv2.minAreaRect(
-                    max(_cnts, key=cv2.contourArea)
-                )
-                # minAreaRect's angle names the WIDTH side; take the long one.
-                _long = _deg if _w >= _h else _deg + 90.0
-                _ar = max(_w, _h) / max(min(_w, _h), 1e-6)
-                return (
-                    float(np.deg2rad(_long)) + np.pi / 2.0,
-                    f"image_minrect_perp(AR={_ar:.2f})",
-                )
-        except Exception as exc:  # noqa: BLE001 - fall through to the old rungs
-            logger.warning("[slot_direction] minAreaRect failed: %s", exc)
-
-    # 3. World OBB major axis, only when AR is trustworthy.
-    tray_ar = float(det_field(det, "aspect_ratio", 1.0) or 1.0)
-    if 1e-6 < tray_ar < 1.0:
-        tray_ar = 1.0 / tray_ar
     world_major = det_field(det, "world_major_axis_rad", None)
     if world_major is None:
         world_major = det_field(det, "orientation_angle", None)
+    tray_ar = float(det_field(det, "aspect_ratio", 1.0) or 1.0)
+    if world_major is not None and 1e-6 < tray_ar < 1.0:  # the stored "major" is the short axis
+        world_major, tray_ar = float(world_major) + np.pi / 2.0, 1.0 / tray_ar
     if world_major is not None and tray_ar >= TRAY_OBB_AR_TRUST:
-        return (
-            float(world_major) + np.pi / 2.0,
-            f"world_obb_perp(AR={tray_ar:.2f})",
-        )
-
-    # 4. Dense image-frame mask PCA (kept as a fallback).
-    mask = det_field(det, "_mask", None)
-    if mask is None:
-        mask = det_field(det, "mask", None)
-    if mask is not None:
-        try:
-            # minAreaRect, not PCA: a rectangle's angle is carried by its
-            # OUTLINE, not its mass distribution (see rung 2).
-            m8 = (np.asarray(mask) > 0).astype(np.uint8)
-            cnts, _ = cv2.findContours(m8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if cnts:
-                (_cx, _cy), (_w, _h), _deg = cv2.minAreaRect(
-                    max(cnts, key=cv2.contourArea)
-                )
-                # minAreaRect's angle names the width side; take the LONG side.
-                long_deg = _deg if _w >= _h else _deg + 90.0
-                rect_ar = (max(_w, _h) / max(min(_w, _h), 1e-6))
-                return (
-                    float(np.deg2rad(long_deg)) + np.pi / 2.0,
-                    f"image_minrect_perp(AR={rect_ar:.2f})",
-                )
-            img_major, img_ar, _, _ = _pca_obb(np.asarray(mask))
-            return (
-                float(img_major) + np.pi / 2.0,
-                f"image_pca_perp(AR={img_ar:.2f})",
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[slot_direction] image-PCA slot axis failed: %s", exc)
-
-    # 5. No reliable source: tray-OBB perpendicular per the geometry above, WARN.
+        return float(world_major), f"container_long_axis(AR={tray_ar:.2f})"
+    plane_axis = det_field(det, "plane_orientation_angle", None)
+    if plane_axis is not None:
+        return float(plane_axis), "container_long_axis(ray_plane)"
     logger.warning(
-        "[slot_direction] no reliable slot-direction source for '%s' "
-        "(no real slots, world OBB AR<%.2f, no mask); using tray-OBB "
-        "perpendicular; placement yaw may be unreliable",
+        "[slot_direction] no reliable direction for '%s' (AR %.2f); placement yaw may be wrong",
         container_label,
-        TRAY_OBB_AR_TRUST,
+        tray_ar,
     )
-    fallback = float(world_major) if world_major is not None else 0.0
-    return fallback + np.pi / 2.0, "tray_obb_perp(fallback)"
+    return float(world_major or 0.0), "container_obb(low_confidence)"
+
+
